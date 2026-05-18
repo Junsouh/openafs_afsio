@@ -1,0 +1,74 @@
+=head1 NAME
+
+afsio_apropos - Displays each help entry containing a keyword string
+
+=head1 SYNOPSIS
+
+=for html
+<div class="synopsis">
+
+B<afsio apropos> S<<< B<-topic> <I<help string>> >>> [B<-help>]
+
+B<afsio apr> S<<< B<-t> <I<help string>> >>> [B<-h>]
+
+=for html
+</div>
+
+=head1 DESCRIPTION
+
+The B<afsio apropos> command displays the first line of the online help entry
+for any B<afsio> command that has in its name or short description the string
+specified by the B<-topic> argument.
+
+To display the syntax for a command, use the B<afsio help> command.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-topic> <I<help string>>
+
+Specifies the keyword string to match, in lowercase letters only.  If the
+string is more than a single word, surround it with double quotes ("") or
+other delimiters.
+
+=item B<-help>
+
+Prints the online help for this command. All other valid options are
+ignored.
+
+=back
+
+=head1 OUTPUT
+
+The first line of a command's online help entry names it and briefly
+describes its function. This command displays the first line for any B<afsio>
+command where the string specified with the B<-topic> argument is part of
+the command name or first line.
+
+=head1 EXAMPLES
+
+The following command lists all afsio commands that include the word C<read>
+in their names or short online descriptions:
+
+   % afsio apropos read
+   fidread: read on a non AFS-client a file from AFS
+   fidreaddir: read on a non AFS-client a directory from AFS
+   read: read a file from AFS
+   readdir: read a directory from AFS
+
+=head1 PRIVILEGE REQUIRED
+
+None
+
+=head1 SEE ALSO
+
+L<afsio(1)>,
+L<afsio_help(1)>
+
+=head1 COPYRIGHT
+
+Copyright 2026 Junsouh Hong <junsouh@gmail.com>
+
+This documentation is covered by the IBM Public License Version 1.0.
+This man page was written by Junsouh Hong for OpenAFS.
