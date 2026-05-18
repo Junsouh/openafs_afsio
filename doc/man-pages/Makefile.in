@@ -32,6 +32,14 @@ dest: man
 	    for M in $(MAN_PAGES_KAUTH); do \
 		$(INSTALL_DATA) $$M $(DEST)/man/$$M ; \
 	    done; \
+	    $(LN) -fs afsio_lock.1 $(DEST)/man/man1/afsio_fidlock.1 ; \
+	    $(LN) -fs afsio_read.1 $(DEST)/man/man1/afsio_fidread.1 ; \
+	    $(LN) -fs afsio_read.1 $(DEST)/man/man1/afsio_readdir.1 ; \
+	    $(LN) -fs afsio_read.1 $(DEST)/man/man1/afsio_fidreaddir.1 ; \
+	    $(LN) -fs afsio_unlock.1 $(DEST)/man/man1/afsio_fidunlock.1 ; \
+	    $(LN) -fs afsio_write.1 $(DEST)/man/man1/afsio_fidwrite.1 ; \
+	    $(LN) -fs afsio_write.1 $(DEST)/man/man1/afsio_append.1 ; \
+	    $(LN) -fs afsio_write.1 $(DEST)/man/man1/afsio_fidappend.1 ; \
 	    $(LN) -fs klog.1 $(DEST)/man/man1/klog.krb.1 ; \
 	    $(LN) -fs pagsh.1 $(DEST)/man/man1/pagsh.krb.1 ; \
 	    $(LN) -fs tokens.1 $(DEST)/man/man1/tokens.krb.1 ; \

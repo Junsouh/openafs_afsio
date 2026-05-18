@@ -1,0 +1,94 @@
+=head1 NAME
+
+afsio - Introduction to the afsio command suite
+
+=head1 DESCRIPTION
+
+The commands in the B<afsio> command suite provides an interface to interact
+with AFS without going through the cache manager, instead operating through
+direct calls to the servers.
+
+There are several categories of commands in the B<afsio> command suite:
+
+=over 4
+
+=item *
+
+Commands to interact with files and directories in AFS:
+L<B<afsio lock>|afsio_lock(1)>,
+L<B<afsio read>|afsio_read(1)>,
+L<B<afsio write>|afsio_write(1)>,
+and L<B<afsio unlock>|afsio_unlock(1)>.
+
+=item *
+
+Commands to obtain help:
+L<B<afsio apropos>|afsio_apropos(1)>
+and L<B<afsio help>|afsio_help(1)>.
+
+=item *
+
+A command to display the OpenAFS command suite version: B<afsio version>.
+
+=back
+
+=head1 OPTIONS
+
+The following flag is available on every command in the afsio suite. The
+reference page for each command also lists it, but it is described here in
+greater detail.
+
+=over 4
+
+=item B<-verbose>
+
+Enables verbose output, including data transfer rates and elapsed time
+statistics. Only has function for certain subcommands.
+
+=item B<-clear>
+
+Uses unencrypted (cleartext) connections to file servers. By default,
+B<afsio> uses encrypted connections when authenticated.
+
+=item B<-crypt>
+
+Uses encrypted connections to file servers. This is the default when
+authenticated.
+
+=item B<-as-user> <I<username>>
+
+Uses localauth credentials to pretend to be the given user, allowing
+authenticated RXAFS operations without a running kernel client. This
+option is only available on a machine where the local key material
+is accessible. The I<username> is a krb4-style name (e.g., C<user.admin>,
+not C<user/admin>).
+
+=item B<-help>
+
+Prints a command's online help message on the standard output stream. Do
+not combine this flag with any of the command's other options; when it is
+provided, the command interpreter ignores all other options, and only
+prints the help message.
+
+=back
+
+=head1 PRIVILEGE REQUIRED
+
+The privileges required for afsio commands greatly. Pay attention to the
+PRIVILEGE REQUIRED section of each command description.
+
+=head1 SEE ALSO
+
+L<afsio_apropos(1)>,
+L<afsio_help(1)>,
+L<afsio_lock(1)>,
+L<afsio_read(1)>,
+L<afsio_unlock(1)>,
+L<afsio_write(1)>,
+
+=head1 COPYRIGHT
+
+Copyright 2026 Junsouh Hong <junsouh@gmail.com>
+
+This documentation is covered by the BSD License as written in the
+F<LICENSE> file. This man page was written by Junsouh Hong for OpenAFS.

@@ -1138,6 +1138,7 @@ dkms remove -m %{name} -v %{dkms_version} --rpm_safe_upgrade --all ||:
 %{_mandir}/man5/afszcm.cat.5.gz
 %{_mandir}/man5/cacheinfo.5.gz
 %{_mandir}/man8/afsd.8.gz
+%{_mandir}/man1/afsio_*.1.gz
 %{_mandir}/man8/vsys.8.gz
 %{_mandir}/man5/CellAlias.5.gz
 

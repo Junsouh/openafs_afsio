@@ -1,0 +1,136 @@
+=head1 NAME
+
+afsio_unlock, afsio_fidunlock - Release locks in AFS
+
+=head1 SYNOPSIS
+
+=for html
+<div class="synopsis">
+
+B<afsio unlock> S<<< B<-file> <I<AFS-filename>> >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-realm> <I<realm name>>] >>>
+    S<<< [B<-waitseconds> <I<seconds to wait before giving up>>] >>>
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+B<afsio fidunlock> S<<< B<-fid> <I<volume.vnode.uniquifier>> >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-realm> <I<realm name>>] >>>
+    S<<< [B<-waitseconds> <I<seconds to wait before giving up>>] >>>
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+=for html
+</div>
+
+=head1 DESCRIPTION
+
+The B<afsio unlock> command attempts to release a lock on the path specified
+by the B<-file> argument. If the file does not have a lock, the command exits
+with an error.
+
+The B<afsio fidunlock> command performs the same operation, but identifies
+the target file by its FID (the standard C<volume.vnode.uniquifier>
+triple) specified in the B<-fid> argument.
+
+=head1 CAUTIONS
+
+The locks released by the above commands are advisory; they are not enforced
+by AFS, which means that they only block other commands/programs that acquire
+locks. Files with a lock can still be written to or read freely.
+
+The locks time out. After 5 minutes, the locks will expire. An attempt to
+release an expired lock will cause an error, as mentioned above.
+
+Lock ownership is not tracked by the file server. This means any caller with
+sufficient permissions can release locks, regardless of the lock's owner.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-file> <I<filename>>
+
+Specifies the AFS pathname of the file to unlock. This option is used by
+B<afsio unlock>. A path not beginning with F</afs> is interpreted relative
+to the cell's F<root.cell>. A path beginning with F</> but not F</afs> is
+invalid.
+
+=item B<-fid> <I<volume.vnode.uniquifier>>
+
+Specifies the file to unlock as a FID triple (for example, C<536870915.4.2>).
+This option is used by B<afsio fidunlock>.
+
+=item B<-cell> <I<cell name>>
+
+Specifies the AFS cell to operate in.
+
+=item B<-realm> <I<realm name>>
+
+Specifies the Kerberos realm to use for authentication.
+
+=item B<-verbose>
+
+Has no effect for B<afsio unlock> or B<afsio fidunlock>.
+
+=item B<-clear>
+
+Uses unencrypted (cleartext) connections to file servers.
+
+=item B<-crypt>
+
+Uses encrypted connections to file servers.
+
+=item B<-waitseconds> <I<seconds>>
+
+Has no effect for B<afsio unlock> or B<afsio fidunlock>.
+
+=item B<-as-user> <I<username>>
+
+Uses localauth credentials to pretend to be the given user, allowing
+authenticated RXAFS operations without a running kernel client.
+
+=item B<-help>
+
+Prints the online help for this command. All other valid options are
+ignored.
+
+=back
+
+=head1 EXAMPLES
+
+The following locks then unlocks a file in AFS:
+
+   % afsio lock -file /afs/testcell.example.com/greeting.txt
+   % afsio unlock -file /afs/testcell.example.com/greeting.txt
+
+The following locks then unlocks a file in AFS, identified by its
+FID:
+
+   % afsio fidlock -fid 536870915.8.824
+   % afsio fidunlock -fid 536870915.8.824
+
+=head1 PRIVILEGE REQUIRED
+
+For both B<afsio unlock> and B<afsio fidunlock>, regardless of the type
+of lock attempting to be released, the issuer must have the C<r> (read)
+and C<l> (lookup) permissions on the parent directory of the target file.
+
+The B<-as-user> option requires access to the local key material,
+which is typically only readable by the local superuser C<root> on a
+server machine.
+
+=head1 SEE ALSO
+
+L<afsio(1)>,
+L<afsio_lock(1)>
+
+=head1 COPYRIGHT
+
+Copyright 2026 Junsouh Hong <junsouh@gmail.com>
+
+This documentation is covered by the BSD License as written in the
+F<LICENSE> file. This man page was written by Junsouh Hong for OpenAFS.
+
+=cut
