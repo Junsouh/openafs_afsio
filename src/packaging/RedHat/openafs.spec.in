@@ -1064,6 +1064,7 @@ dkms remove -m %{name} -v %{dkms_version} --rpm_safe_upgrade --all ||:
 %{_libdir}/librokenafs.so.*
 %{_mandir}/man1/afs.1.gz
 %{_mandir}/man1/afsmonitor.1.gz
+%{_mandir}/man1/afsio_*.1.gz
 %{_mandir}/man1/fs.1.gz
 %{_mandir}/man1/fs_*.1.gz
 %{_mandir}/man1/pagsh.1.gz
