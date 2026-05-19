@@ -19,6 +19,7 @@ MAN_PAGES = \
   man1/afs_compile_et.1 \
   man1/afsio_apropos.1 \
   man1/afsio_help.1 \
+  man1/afsio_write.1\
   man1/afsmonitor.1 \
   man1/aklog.1 \
   man1/cmdebug.1 \
