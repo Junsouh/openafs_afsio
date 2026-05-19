@@ -1,0 +1,193 @@
+=head1 NAME
+
+afsio_write - Write, append, or create files in AFS
+
+=head1 SYNOPSIS
+
+=for html
+<div class="synopsis">
+
+B<afsio write> S<<< B<-file> <I<AFS-filename>> >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    [B<-md5>] [B<-force>] S<<< [B<-synthesize> <I<length>>] >>>
+    S<<< [B<-realm> <I<realm name>>] >>>    
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+B<afsio fidwrite> S<<< B<-vnode> <I<volume.vnode.uniquifier>> >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    [B<-md5>] [B<-force>] S<<< [B<-synthesize> <I<length>>] >>>
+    S<<< [B<-realm> <I<realm name>>] >>>    
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+B<afsio append> S<<< B<-file> <I<AFS-filename>> >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-synthesize> <I<length>>] >>>
+    S<<< [B<-realm> <I<realm name>>] >>>    
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+B<afsio fidappend> S<<< B<-vnode> <I<volume.vnode.uniquifier>> >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-synthesize> <I<length>>] >>>
+    S<<< [B<-realm> <I<realm name>>] >>>    
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+=for html
+</div>
+
+=head1 DESCRIPTION
+
+The B<afsio write> command reads data from standard input and writes it
+to a new file in AFS at the path specified by the B<-file> argument.
+The parent directory must already exist. If the file already exists, the
+command exits with an error unless the B<-force> flag is provided.
+
+The B<afsio fidwrite> command performs the same operation, but identifies
+the target file by its FID (the standard C<volume.vnode.uniquifier> triple) 
+specified in the B<-vnode> argument. This file must already exist;
+B<afsio fidwrite> cannot create new files. However, B<afsio fidwrite> can 
+operate on existing files without B<-force> if the file is empty, unlike 
+B<afsio write>.
+
+The B<afsio append> command reads data from standard input and appends
+it to an existing file in AFS. The file must already exist; if it does
+not, the command exits.
+
+The B<afsio fidappend> command performs the same operation as B<afsio
+append>, but identifies the target file by its FID specified in the B<-vnode>
+argument.
+
+=head1 CAUTIONS
+
+The maximum input size is 64 MB, and it is also the maximum size for the
+B<-synthesize> option. Behavior with larger sizes is undefined.
+
+The B<-force> flag for B<afsio write> and B<afsio fidwrite> silently
+overwrites existing file data. 
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-file> <I<filename>>
+
+Specifies the full AFS pathname of the file to write or append to.
+This option is used by B<afsio write> and B<afsio append>. A path
+not beginning with F</afs> is interpreted relative to the cell's F<root.cell>.
+A path beginning with F</> but not F</afs> is invalid.
+
+=item B<-vnode> <I<volume.vnode.uniquifier>>
+
+Specifies the file to write or append to as a FID triple (e.g.,
+C<536870915.1.1>). This option is used by B<afsio fidwrite> and B<afsio
+fidappend>. 
+
+=item B<-cell> <I<cell name>>
+
+Specifies the AFS cell to operate in. 
+
+=item B<-realm> <I<realm name>>
+
+Specifies the Kerberos realm to use for authentication. 
+
+=item B<-synthesize> <I<length>>
+
+Instead of reading from standard input, generates synthetic data of the
+specified length in bytes. The synthetic data contains offset markers
+at 4096-byte intervals. This may be used for testing write performance
+and verifying file server operations.
+
+=item B<-md5>
+
+Computes and prints an MD5 digest of the data written.
+
+=item B<-force>
+
+For B<afsio write>: allows overwriting an existing file. Without this
+flag, the command exits with an error if the target file already exists.
+
+For B<afsio fidwrite>: allows overwriting a file that already has
+non-zero length.
+
+This option has no effect on the B<append> and B<fidappend> commands.
+
+=item B<-verbose>
+
+Enables verbose output.
+
+=item B<-clear>
+
+Uses unencrypted (cleartext) connections to file servers. 
+
+=item B<-crypt>
+
+Uses encrypted connections to file servers. 
+
+=item B<-as-user> <I<username>>
+
+Uses localauth credentials to pretend to be the given user, allowing
+authenticated RXAFS operations without a running kernel client. 
+
+=item B<-help>
+
+Prints the online help for this command. All other valid options are
+ignored.
+
+=back
+
+=head1 EXAMPLES
+
+The following writes input into a file in AFS:
+
+   % echo "Hello" | afsio write \
+       -file /afs/testcell.example.com/greeting.txt
+   % afsio read -file /afs/testcell.example.com/greeting.txt
+   Hello
+
+The following appends data to an existing file:
+
+   % echo "Hello" | afsio write \
+       -file /afs/testcell.example.com/greeting2.txt
+   % echo "Hello Again" | afsio append \
+       -file /afs/testcell.example.com/greeting2.txt
+   % afsio read -file /afs/testcell.example.com/greeting2.txt
+   Hello
+   Hello Again
+
+The following writes data to a file identified by its FID:
+
+   % echo "Hello" | afsio fidwrite -vnode 536870918.4.2
+
+The following command writes 1 MB of synthetic data to a file, computing
+a MD5 digest and printing verbosely:
+
+   % afsio write -file /afs/testcell.example.com/test.txt \
+       -synthesize 1048576 -md5 -verbose
+
+=head1 PRIVILEGE REQUIRED
+
+The issuer must have the C<i> (insert) and C<l> (lookup) permissions on
+the parent directory's ACL to create a new file. Overwriting or appending
+to an existing file requires the C<w> (write) and C<l> (lookup)
+permissions.
+
+The B<-as-user> option requires access to the local key material, which
+is typically only readable by the local superuser C<root> on a server
+machine.
+
+=head1 SEE ALSO
+
+L<afsio(1)>,
+L<afsio_read(1)>
+
+=head1 COPYRIGHT
+
+Copyright 2026 Junsouh Hong <junsouh@gmail.com>
+
+This documentation is covered by the IBM Public License Version 1.0.
+This man page was written by Junsouh Hong for OpenAFS.
+
+=cut
