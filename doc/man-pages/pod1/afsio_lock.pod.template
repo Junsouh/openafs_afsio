@@ -1,0 +1,144 @@
+=head1 NAME
+
+afsio_lock - Acquire locks in AFS
+
+=head1 SYNOPSIS
+
+=for html
+<div class="synopsis">
+
+B<afsio lock> S<<< B<-file> <I<AFS-filename>> >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-realm> <I<realm name>>] >>>
+    S<<< [B<-waitseconds> <I<seconds to wait before giving up>>] >>>
+    [B<-readlock>] S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+B<afsio fidlock> S<<< B<-fid> <I<volume.vnode.uniquifier>> >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-realm> <I<realm name>>] >>>
+    S<<< [B<-waitseconds> <I<seconds to wait before giving up>>] >>>
+    [B<-readlock>] S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+=for html
+</div>
+
+=head1 DESCRIPTION
+
+The B<afsio lock> command acquires an advisory write lock on the path specified
+by the B<-file> argument. If the file is already locked, the command waits up to
+the number of seconds specified by the B<-waitseconds> argument before giving
+up. To set a read lock, specify the B<-readlock> argument.
+
+The B<afsio fidlock> command performs the same operation, but identifies
+the target file by its FID (the standard C<volume.vnode.uniquifier>
+triple) specified in the B<-fid> argument.
+
+=head1 CAUTIONS
+
+The locks acquired by the above commands are advisory; they are not enforced
+by AFS, which means that they only block other commands/programs that acquire
+locks. Files with a lock can still be written to or read freely.
+
+The locks time out. After 5 minutes, the locks will expire, and will have
+to be re-acquired.
+
+Lock ownership is not tracked by the file server. This means any caller with
+sufficient permissions can release locks, regardless of the lock's owner.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-file> <I<filename>>
+
+Specifies the AFS pathname of the file to lock. This option is used by
+B<afsio lock>. A path not beginning with F</afs> is interpreted relative
+to the cell's F<root.cell>. A path beginning with F</> but not F</afs> is invalid.
+
+=item B<-fid> <I<volume.vnode.uniquifier>>
+
+Specifies the file to lock as a FID triple (for example,
+C<536870915.4.2>). This option is used by B<afsio fidlock>.
+
+=item B<-cell> <I<cell name>>
+
+Specifies the AFS cell to operate in.
+
+=item B<-realm> <I<realm name>>
+
+Specifies the Kerberos realm to use for authentication.
+
+=item B<-verbose>
+
+Enables verbose output.
+
+=item B<-clear>
+
+Uses unencrypted (cleartext) connections to file servers.
+
+=item B<-crypt>
+
+Uses encrypted connections to file servers.
+
+=item B<-waitseconds> <I<seconds>>
+
+Specifies the number of seconds to wait when attempting to acquire a lock.
+This option is used by B<afsio lock> and B<afsio fidlock>. This option has
+no effect on the B<afsio unlock> and B<afsio fidunlock> commands.
+
+=item B<-readlock>
+
+Sets a read lock instead of a write lock.
+
+=item B<-as-user> <I<username>>
+
+Uses localauth credentials to pretend to be the given user, allowing
+authenticated RXAFS operations without a running kernel client.
+
+=item B<-help>
+
+Prints the online help for this command. All other valid options are
+ignored.
+
+=back
+
+=head1 EXAMPLES
+
+The following locks a file in AFS, set to wait 30 seconds for timeout:
+
+   % afsio lock -file /afs/testcell.example.com/greeting.txt -waitseconds 30
+
+The following acquires a readlock on a file identified by its FID:
+
+   % afsio fidlock -fid 536870915.8.824 -readlock
+
+=head1 PRIVILEGE REQUIRED
+
+For both B<afsio lock> and B<afsio fidlock>, when attempting to acquire a
+write lock (default), the issuer must have the C<r> (read), C<l> (lookup),
+and C<w> (write) permissions on the parent directory of the target file.
+
+When attempting to acquire a read lock (the B<-readlock> option), the issuer
+must have the C<r> (read), C<l> (lookup), and C<k> (lock) permissions on
+the parent directory of the target file. A caller with C<w> (write) in place
+of C<k> (lock) can also acquire a read lock.
+
+The B<-as-user> option requires access to the local key material,
+which is typically only readable by the local superuser C<root> on a
+server machine.
+
+=head1 SEE ALSO
+
+L<afsio(1)>,
+L<afsio_unlock(1)>
+
+=head1 COPYRIGHT
+
+Copyright 2026 Junsouh Hong <junsouh@gmail.com>
+
+This documentation is covered by the IBM Public License Version 1.0.
+This man page was written by Junsouh Hong for OpenAFS.
+
+=cut
