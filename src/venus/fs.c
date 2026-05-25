@@ -806,28 +806,80 @@ QuickPrintSpace(VolumeStatus * status, char *name, int human)
     return 0;
 }
 
-static char *
-AclToString(struct Acl *acl)
+/**
+ * Converts an Acl data structure into a string.
+ *
+ * Serializes a user-provided Acl struct into a string. May be used for storing
+ * or displaying ACLs.
+ *
+ * @param[in]   acl             the Acl struct to be converted
+ * @param[out]  a_acl_str       resulting ACL string, contents undefined on
+ *				failure
+ * @param[in]   len             length of the output buffer a_acl_str, should be
+ *				at least AFS_PIOCTL_MAXSIZE + 24 to guarantee
+ *				sufficient space
+ *
+ * @return status codes
+ * @retval 0 success
+ * @retval EINVAL provided buffer or Acl struct is NULL
+ * @retval ENOSPC truncation occurred while assembling string
+ */
+static int
+AclToString(const struct Acl *acl, char *a_acl_str, size_t len)
 {
-    static char mydata[AFS_PIOCTL_MAXSIZE + 24];
-    char tstring[AFS_PIOCTL_MAXSIZE];
-    char dfsstring[AFS_PIOCTL_MAXSIZE];
-    struct AclEntry *tp;
+    char *buf = a_acl_str;
+    struct AclEntry *entry;
+    int offset;
+    size_t bsize = len;
 
-    if (acl->dfs)
-	snprintf(dfsstring, sizeof(dfsstring), " dfs:%d %s", acl->dfs, acl->cell);
-    else
-	dfsstring[0] = '\0';
-    snprintf(mydata, sizeof(mydata), "%d%s\n%d\n", acl->nplus, dfsstring, acl->nminus);
-    for (tp = acl->pluslist; tp; tp = tp->next) {
-	snprintf(tstring, sizeof(tstring), "%s %d\n", tp->name, tp->rights);
-	strlcat(mydata, tstring, sizeof(mydata));
+    if (buf == NULL || acl == NULL) {
+	return EINVAL;
     }
-    for (tp = acl->minuslist; tp; tp = tp->next) {
-	snprintf(tstring, sizeof(tstring), "%s %d\n", tp->name, tp->rights);
-	strlcat(mydata, tstring, sizeof(mydata));
+
+    memset(buf, 0, bsize);
+
+    offset = snprintf(buf, bsize, "%d", acl->nplus);
+    if (offset < 0 || (size_t)offset >= bsize) {
+	return ENOSPC;
     }
-    return mydata;
+
+    buf += offset;
+    bsize -= offset;
+
+    if (acl->dfs) {
+	offset = snprintf(buf, bsize, " dfs:%d %s", acl->dfs, acl->cell);
+	if (offset < 0 || (size_t)offset >= bsize) {
+	    return ENOSPC;
+	}
+	buf += offset;
+	bsize -= offset;
+    }
+
+    offset = snprintf(buf, bsize, "\n%d\n", acl->nminus);
+    if (offset < 0 || (size_t)offset >= bsize) {
+	return ENOSPC;
+    }
+
+    buf += offset;
+    bsize -= offset;
+
+    for (entry = acl->pluslist; entry != NULL; entry = entry->next) {
+	offset = snprintf(buf, bsize, "%s %d\n", entry->name, entry->rights);
+	if (offset < 0 || (size_t)offset >= bsize) {
+	    return ENOSPC;
+	}
+	buf += offset;
+	bsize -= offset;
+    }
+    for (entry = acl->minuslist; entry != NULL; entry = entry->next) {
+	offset = snprintf(buf, bsize, "%s %d\n", entry->name, entry->rights);
+	if (offset < 0 || (size_t)offset >= bsize) {
+	    return ENOSPC;
+	}
+	buf += offset;
+	bsize -= offset;
+    }
+    return 0;
 }
 
 static int
@@ -842,6 +894,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
     int clear;
     int idf = getidf(as, parm_setacl_id);
     int error = 0;
+    char buf[AFS_PIOCTL_MAXSIZE + 24];
 
     if (as->parms[2].items)
 	clear = 1;
@@ -917,7 +970,10 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 		rights = -1;
 	    ChangeList(ta, plusp, ui->data, rights, &rtype);
 	}
-	blob.in = AclToString(ta);
+	code = AclToString(ta, buf, sizeof(buf));
+	opr_Assert(code == 0);
+
+	blob.in = buf;
 	blob.out_size = 0;
 	blob.in_size = 1 + strlen(blob.in);
 	code = pioctl(ti->data, VIOCSETAL, &blob, 1);
@@ -992,6 +1048,7 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
     int clear;
     int idf = getidf(as, parm_copyacl_id);
     int error = 0;
+    char buf[AFS_PIOCTL_MAXSIZE + 24];
 
     if (as->parms[2].items)
 	clear = 1;
@@ -1047,7 +1104,10 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
 	    ChangeList(ta, 1, tp->name, tp->rights, NULL);
 	for (tp = fa->minuslist; tp; tp = tp->next)
 	    ChangeList(ta, 0, tp->name, tp->rights, NULL);
-	blob.in = AclToString(ta);
+	code = AclToString(ta, buf, sizeof(buf));
+	opr_Assert(code == 0);
+
+	blob.in = buf;
 	blob.out_size = 0;
 	blob.in_size = 1 + strlen(blob.in);
 	code = pioctl(ti->data, VIOCSETAL, &blob, 1);
@@ -1175,6 +1235,7 @@ CleanACLCmd(struct cmd_syndesc *as, void *arock)
     struct cmd_item *ti;
     struct AclEntry *te;
     int error = 0;
+    char acl_str[AFS_PIOCTL_MAXSIZE + 24];
 
     SetDotDefault(&as->parms[0].items);
     for (ti = as->parms[0].items; ti; ti = ti->next) {
@@ -1203,7 +1264,10 @@ CleanACLCmd(struct cmd_syndesc *as, void *arock)
 
 	if (changes) {
 	    /* now set the acl */
-	    blob.in = AclToString(ta);
+	    code = AclToString(ta, acl_str, sizeof(acl_str));
+	    opr_Assert(code == 0);
+
+	    blob.in = acl_str;
 	    blob.in_size = strlen(blob.in) + 1;
 	    blob.out_size = 0;
 	    code = pioctl(ti->data, VIOCSETAL, &blob, 1);
