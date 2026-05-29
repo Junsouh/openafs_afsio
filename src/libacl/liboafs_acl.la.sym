@@ -1,5 +1,10 @@
+acl_AclToString
+acl_ChangeList
 acl_CheckRights
+acl_CleanAcl
+acl_EmptyAcl
 acl_Externalize_pr
+acl_FindList
 acl_FreeACL
 acl_FreeExternalACL
 acl_HtonACL
@@ -7,3 +12,7 @@ acl_Initialize
 acl_Internalize_pr
 acl_IsAMember
 acl_NtohACL
+acl_ParseAcl
+acl_ParseRights
+acl_StringifyRights
+acl_ZapAcl

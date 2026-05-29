@@ -15,6 +15,8 @@
 #ifndef _ACL_
 #define _ACL_
 
+#include <afs/afs_consts.h>
+#include <afs/stds.h>
 
 #include "afs/ptint.h"
 
@@ -47,6 +49,43 @@ Used in VICE. This is how acccess lists are stored on secondary storage.
 
 
 #define ACL_MAXENTRIES	20
+
+#define MAXNAME 100
+
+typedef char sec_rgy_name_t[1025];	/* A DCE definition */
+
+enum rtype {
+    add,	/**< overwrite/set rights ('=' default behavior) */
+    destroy,	/**< remove the ACL entirely ("none") */
+    deny,	/**< revoke all rights ("null" DFS specific) */
+    reladd,	/**< add specific rights to existing ones ('+') */
+    reldel	/**< remove specific rights from existing ones ('-') */
+};
+
+struct acl_stringbuf {
+    char sbuf[16];
+};
+
+struct AclEntry {
+    struct AclEntry *next;
+    char name[MAXNAME];
+    afs_int32 rights;
+};
+
+struct Acl {
+    int dfs;			/* Originally true if a dfs acl; now also the
+				 * type of the acl (1, 2, or 3, corresponding to
+				 * object, initial dir, or initial object). */
+    sec_rgy_name_t cell;	/* DFS cell name */
+    int nplus;
+    int nminus;
+    struct AclEntry *pluslist;
+    struct AclEntry *minuslist;
+};
+
+/*
+The above ACL format is the in-memory format for building and editing ACLs
+*/
 
 /*
  * External access lists are just char *'s, with the following format:
@@ -81,5 +120,19 @@ extern int acl_IsAMember(afs_int32 aid, prlist *cps);
 
 extern int acl_HtonACL(struct acl_accessList *);
 extern int acl_NtohACL(struct acl_accessList *);
+
+extern char *acl_StringifyRights(afs_int32 rights, int is_dfs,
+				 struct acl_stringbuf *a_strbuf);
+extern int acl_AclToString(const struct Acl *acl, char *a_acl_str, size_t len);
+extern int acl_ParseRights(const char *rights, int is_dfs,
+			   enum rtype *a_rights_type, afs_int32 *a_rights_mask,
+			   int *a_error_offset);
+extern int acl_CleanAcl(struct Acl *aa, char *cellname);
+extern int acl_ChangeList(struct Acl *al, afs_int32 plus, const char *aname,
+			  afs_int32 arights, const enum rtype *artypep);
+extern struct AclEntry *acl_FindList(struct AclEntry *alist, const char *aname);
+extern int acl_ParseAcl(const char *astr, struct Acl **a_acl);
+extern int acl_EmptyAcl(const char *astr, struct Acl **a_acl);
+extern void acl_ZapAcl(struct Acl **a_acl);
 
 #endif
