@@ -68,9 +68,10 @@ cacheout: cacheout.o
 cmdebug: cmdebug.o ${CMLIBS}
 	$(LT_LDRULE_static) cmdebug.o ${CMLIBS} $(LIB_roken) ${MT_LIBS}
 
-fs: fs.o $(LIBS)
-	$(LT_LDRULE_static) fs.o $(top_builddir)/src/ptserver/liboafs_prot.la $(LIBS) \
-		$(LIB_roken) $(MT_LIBS)
+fs: fs.o aclutil.o $(LIBS)
+	$(LT_LDRULE_static) fs.o aclutil.o \
+		$(top_builddir)/src/ptserver/liboafs_prot.la \
+		$(LIBS) $(LIB_roken) $(MT_LIBS)
 
 fstrace: fstrace.o
 	$(LT_LDRULE_static) fstrace.o $(LIBS) $(LIB_roken) ${MT_LIBS}
@@ -100,11 +101,15 @@ afscbint.ss.o: ../fsint/afscbint.ss.c
 afsio.o: afsio.c ${AFSIO_INCLS} AFS_component_version_number.c
 	${PTH_CCRULE} ${srcdir}/afsio.c
 
+aclutil.o: aclutil.c aclutil.h ${TOP_INCDIR}/afs/prs_fs.h \
+	${TOP_INCDIR}/afs/ptuser.h ${TOP_INCDIR}/afs/ptclient.h
+		${PTH_CCRULE} ${srcdir}/aclutil.c
+
 cacheout.o: cacheout.c ${INCLS} AFS_component_version_number.c
 
 cmdebug.o: cmdebug.c ${INCLS} AFS_component_version_number.c
 
-fs.o: fs.c ${INCLS} AFS_component_version_number.c
+fs.o: fs.c aclutil.h ${INCLS} AFS_component_version_number.c
 
 fstrace.o: fstrace.c ${INCLS} AFS_component_version_number.c
 
