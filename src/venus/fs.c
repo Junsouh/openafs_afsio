@@ -187,6 +187,64 @@ getidf(struct cmd_syndesc *as, int id)
     return idf;
 }
 
+struct acl_shorthand {
+    const char *name;
+    afs_int32 mask;
+};
+
+static const struct acl_shorthand afs_shorthand[] = {
+    { "read",  PRSFS_READ   | PRSFS_LOOKUP },
+    { "mail",  PRSFS_INSERT | PRSFS_LOCK   | PRSFS_LOOKUP },
+    { "write", PRSFS_READ   | PRSFS_LOOKUP | PRSFS_INSERT | PRSFS_DELETE |
+	       PRSFS_WRITE  | PRSFS_LOCK },
+    { "all",   PRSFS_READ   | PRSFS_LOOKUP | PRSFS_INSERT | PRSFS_DELETE |
+	       PRSFS_WRITE  | PRSFS_LOCK   | PRSFS_ADMINISTER },
+    { NULL, 0 }
+};
+
+static const afs_int32 afs_bitmap[256] = {
+    ['r'] = PRSFS_READ,
+    ['l'] = PRSFS_LOOKUP,
+    ['i'] = PRSFS_INSERT,
+    ['d'] = PRSFS_DELETE,
+    ['w'] = PRSFS_WRITE,
+    ['k'] = PRSFS_LOCK,
+    ['a'] = PRSFS_ADMINISTER,
+    ['A'] = PRSFS_USR0,
+    ['B'] = PRSFS_USR1,
+    ['C'] = PRSFS_USR2,
+    ['D'] = PRSFS_USR3,
+    ['E'] = PRSFS_USR4,
+    ['F'] = PRSFS_USR5,
+    ['G'] = PRSFS_USR6,
+    ['H'] = PRSFS_USR7
+};
+
+static const struct acl_shorthand dfs_shorthand[] = {
+    { "read",  DFS_READ | DFS_EXECUTE },
+    { "write", DFS_READ | DFS_EXECUTE | DFS_INSERT | DFS_DELETE | DFS_WRITE },
+    { "all",   DFS_READ | DFS_EXECUTE | DFS_INSERT | DFS_DELETE | DFS_WRITE |
+	       DFS_CONTROL },
+    { NULL, 0 }
+};
+
+static const afs_int32 dfs_bitmap[256] = {
+    ['r'] = DFS_READ,
+    ['w'] = DFS_WRITE,
+    ['x'] = DFS_EXECUTE,
+    ['c'] = DFS_CONTROL,
+    ['i'] = DFS_INSERT,
+    ['d'] = DFS_DELETE,
+    ['A'] = DFS_USR0,
+    ['B'] = DFS_USR1,
+    ['C'] = DFS_USR2,
+    ['D'] = DFS_USR3,
+    ['E'] = DFS_USR4,
+    ['F'] = DFS_USR5,
+    ['G'] = DFS_USR6,
+    ['H'] = DFS_USR7
+};
+
 static int
 PRights(afs_int32 arights, int dfs)
 {
@@ -304,140 +362,129 @@ Parent(char *apath)
     return tspace;
 }
 
-                                /* added relative add resp. delete    */
-                                /* (so old add really means to set)   */
-enum rtype { add, destroy, deny, reladd, reldel };
+enum rtype {
+    add,	/**< overwrite/set rights ('=' default behavior) */
+    destroy,	/**< remove the ACL entirely ("none") */
+    deny,	/**< revoke all rights ("null" DFS specific) */
+    reladd,	/**< add specific rights to existing ones ('+') */
+    reldel	/**< remove specific rights from existing ones ('-') */
+};
 
-static afs_int32
-Convert(char *arights, int dfs, enum rtype *rtypep)
+/**
+ * Parses an ACL rights string into a bitmask.
+ *
+ * Translates user-provided string of access rights into the internal bitmask
+ * representation. It handles abbreviations (e.g. rlidwka) and shorthands
+ * (e.g. read). It also inspects the string for trailing modifiers (+, -,
+ * =) to determine whether the rights should be added to, removed from, or
+ * explicitly overwrite the existing ACL entry.
+ *
+ * @param[in]   rights          null-terminated string representing the rights
+ * @param[in]   is_dfs          non-zero if parsing DCE DFS access rights
+ * @param[out]  a_rights_type   resolved ACL action
+ * @param[out]  a_rights_mask   calculated rights bitmask
+ * @param[out]  a_error_offset  index of the first illegal char encountered
+ *
+ * @return status codes
+ * @retval 0 success
+ * @retval EINVAL NULL argument or unrecognized character
+ */
+static int
+ParseRights(const char *rights, int is_dfs, enum rtype *a_rights_type,
+	    afs_int32 *a_rights_mask, int *a_error_offset)
 {
-    afs_int32 mode;
-    char tc;
-    char *tcp;                  /* to walk through the rights string  */
+    int acl_i;
+    size_t rights_len;
+    afs_int32 mode = 0;
+    const afs_int32 *bitmap;
+    const struct acl_shorthand *shorthand;
 
-    *rtypep = add;		/* add rights, by default */
-
-                                /* analyze last character of string   */
-    tcp = arights + strlen(arights);
-    if ( tcp-- > arights ) {    /* assure non-empty string            */
-        if ( *tcp == '+' )
-            *rtypep = reladd;   /* '+' indicates more rights          */
-        else if ( *tcp == '-' )
-            *rtypep = reldel;   /* '-' indicates less rights          */
-        else if ( *tcp == '=' )
-            *rtypep = add;      /* '=' also allows old behaviour      */
-        else
-            tcp++;              /* back to original null byte         */
-        *tcp = '\0';            /* do not disturb old strcmp-s        */
+    if (rights == NULL || a_rights_type == NULL || a_rights_mask == NULL) {
+	return EINVAL;
     }
 
-    if (dfs) {
-	if (!strcmp(arights, "null")) {
-	    *rtypep = deny;
+    /* default behavior */
+    *a_rights_type = add;
+
+    if (a_error_offset != NULL) {
+	*a_error_offset = -1;
+    }
+
+    rights_len = strlen(rights);
+    if (rights_len > 0) {
+	char type = rights[rights_len - 1];
+	switch (type) {
+	case '+':
+	    *a_rights_type = reladd;
+	    rights_len--;
+	    break;
+	case '-':
+	    *a_rights_type = reldel;
+	    rights_len--;
+	    break;
+	case '=':
+	    *a_rights_type = add;
+	    rights_len--;
+	    break;
+	}
+    }
+
+    /* special cases */
+    if (is_dfs) {
+	if (rights_len == strlen("null") &&
+	    strncmp(rights, "null", rights_len) == 0) {
+	    *a_rights_type = deny;
+	    *a_rights_mask = 0;
 	    return 0;
 	}
-	if (!strcmp(arights, "read"))
-	    return DFS_READ | DFS_EXECUTE;
-	if (!strcmp(arights, "write"))
-	    return DFS_READ | DFS_EXECUTE | DFS_INSERT | DFS_DELETE |
-		DFS_WRITE;
-	if (!strcmp(arights, "all"))
-	    return DFS_READ | DFS_EXECUTE | DFS_INSERT | DFS_DELETE |
-		DFS_WRITE | DFS_CONTROL;
-    } else {
-	if (!strcmp(arights, "read"))
-	    return PRSFS_READ | PRSFS_LOOKUP;
-	if (!strcmp(arights, "write"))
-	    return PRSFS_READ | PRSFS_LOOKUP | PRSFS_INSERT | PRSFS_DELETE |
-		PRSFS_WRITE | PRSFS_LOCK;
-	if (!strcmp(arights, "mail"))
-	    return PRSFS_INSERT | PRSFS_LOCK | PRSFS_LOOKUP;
-	if (!strcmp(arights, "all"))
-	    return PRSFS_READ | PRSFS_LOOKUP | PRSFS_INSERT | PRSFS_DELETE |
-		PRSFS_WRITE | PRSFS_LOCK | PRSFS_ADMINISTER;
     }
-    if (!strcmp(arights, "none")) {
-	*rtypep = destroy;	/* Remove entire entry */
+    if (rights_len == strlen("none") &&
+	strncmp(rights, "none", rights_len) == 0) {
+	*a_rights_type = destroy;
+	*a_rights_mask = 0;
 	return 0;
     }
-    mode = 0;
-    tcp = arights;
-    while ((tc = *tcp++ )) {
-	if (dfs) {
-	    if (tc == '-')
-		continue;
-	    else if (tc == 'r')
-		mode |= DFS_READ;
-	    else if (tc == 'w')
-		mode |= DFS_WRITE;
-	    else if (tc == 'x')
-		mode |= DFS_EXECUTE;
-	    else if (tc == 'c')
-		mode |= DFS_CONTROL;
-	    else if (tc == 'i')
-		mode |= DFS_INSERT;
-	    else if (tc == 'd')
-		mode |= DFS_DELETE;
-	    else if (tc == 'A')
-		mode |= DFS_USR0;
-	    else if (tc == 'B')
-		mode |= DFS_USR1;
-	    else if (tc == 'C')
-		mode |= DFS_USR2;
-	    else if (tc == 'D')
-		mode |= DFS_USR3;
-	    else if (tc == 'E')
-		mode |= DFS_USR4;
-	    else if (tc == 'F')
-		mode |= DFS_USR5;
-	    else if (tc == 'G')
-		mode |= DFS_USR6;
-	    else if (tc == 'H')
-		mode |= DFS_USR7;
-	    else {
-		fprintf(stderr, "%s: illegal DFS rights character '%c'.\n",
-			pn, tc);
-		exit(1);
-	    }
-	} else {
-	    if (tc == 'r')
-		mode |= PRSFS_READ;
-	    else if (tc == 'l')
-		mode |= PRSFS_LOOKUP;
-	    else if (tc == 'i')
-		mode |= PRSFS_INSERT;
-	    else if (tc == 'd')
-		mode |= PRSFS_DELETE;
-	    else if (tc == 'w')
-		mode |= PRSFS_WRITE;
-	    else if (tc == 'k')
-		mode |= PRSFS_LOCK;
-	    else if (tc == 'a')
-		mode |= PRSFS_ADMINISTER;
-	    else if (tc == 'A')
-		mode |= PRSFS_USR0;
-	    else if (tc == 'B')
-		mode |= PRSFS_USR1;
-	    else if (tc == 'C')
-		mode |= PRSFS_USR2;
-	    else if (tc == 'D')
-		mode |= PRSFS_USR3;
-	    else if (tc == 'E')
-		mode |= PRSFS_USR4;
-	    else if (tc == 'F')
-		mode |= PRSFS_USR5;
-	    else if (tc == 'G')
-		mode |= PRSFS_USR6;
-	    else if (tc == 'H')
-		mode |= PRSFS_USR7;
-	    else {
-		fprintf(stderr, "%s: illegal rights character '%c'.\n", pn,
-			tc);
-		exit(1);
-	    }
+
+    if (is_dfs) {
+	bitmap = dfs_bitmap;
+	shorthand = dfs_shorthand;
+    } else {
+	bitmap = afs_bitmap;
+	shorthand = afs_shorthand;
+    }
+
+    /* check if a shorthand was given first */
+    for (acl_i = 0; shorthand[acl_i].name != NULL; acl_i++) {
+	if (rights_len != strlen(shorthand[acl_i].name)) {
+	    continue;
+	}
+	if (strncmp(rights, shorthand[acl_i].name, rights_len) == 0) {
+	    *a_rights_mask = shorthand[acl_i].mask;
+	    return 0;
 	}
     }
-    return mode;
+
+    /* if no shorthand was found, check for abbreviations */
+    for (acl_i = 0; acl_i < (int)rights_len; acl_i++) {
+	unsigned char acl = rights[acl_i];
+	afs_int32 mask = bitmap[acl];
+
+	/* special case */
+	if (is_dfs && acl == '-') {
+	    continue;
+	}
+	if (mask == 0) {
+	    if (a_error_offset != NULL) {
+		*a_error_offset = acl_i;
+	    }
+	    return EINVAL;
+	}
+	mode |= mask;
+    }
+
+    *a_rights_mask = mode;
+
+    return 0;
 }
 
 static struct AclEntry *
@@ -832,6 +879,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 	    ta = ParseAcl(space);
 	CleanAcl(ta, ti->data);
 	for (ui = as->parms[1].items; ui; ui = ui->next->next) {
+	    int idx = -1;
 	    enum rtype rtype;
 	    if (!ui->next) {
 		fprintf(stderr,
@@ -839,7 +887,23 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 		ZapAcl(ta);
 		return 1;
 	    }
-	    rights = Convert(ui->next->data, ta->dfs, &rtype);
+	    code = ParseRights(ui->next->data, ta->dfs, &rtype, &rights, &idx);
+	    if (code != 0) {
+		if (idx != -1) {
+		    char *rights_str = ui->next->data;
+		    char illegal_char = rights_str[idx];
+		    if (ta->dfs) {
+			fprintf(stderr,
+				"%s: illegal DFS rights character '%c'.\n",
+				pn, illegal_char);
+		    } else {
+			fprintf(stderr, "%s: illegal rights character '%c'.\n",
+				pn, illegal_char);
+		    }
+		}
+		ZapAcl(ta);
+		exit(1);
+	    }
 	    if (rtype == destroy && !ta->dfs) {
 		struct AclEntry *tlist;
 
