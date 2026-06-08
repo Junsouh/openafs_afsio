@@ -67,6 +67,7 @@ static int PruneList(struct AclEntry **, int);
 static int CleanAcl(struct Acl *, char *);
 static int SetVolCmd(struct cmd_syndesc *as, void *arock);
 static int GetCellName(char *, char *, size_t);
+static afs_int32 GetCell(char *, char *);
 static void Die(int, char *);
 
 /*
@@ -875,6 +876,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
     int idf = getidf(as, parm_setacl_id);
     int error = 0;
     char acl_str[AFS_PIOCTL_MAXSIZE + 24];
+    char cell[MAXCELLCHARS];
 
     if (as->parms[2].items)
 	clear = 1;
@@ -910,7 +912,10 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 	    ta = EmptyAcl(space);
 	else
 	    ta = ParseAcl(space);
-	CleanAcl(ta, ti->data);
+	code = GetCell(ti->data, cell);
+	if (code == 0) {
+	    CleanAcl(ta, cell);
+	}
 	for (ui = as->parms[1].items; ui; ui = ui->next->next) {
 	    int idx = -1;
 	    enum rtype rtype;
@@ -1029,6 +1034,7 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
     int idf = getidf(as, parm_copyacl_id);
     int error = 0;
     char acl_str[AFS_PIOCTL_MAXSIZE + 24];
+    char cell[MAXCELLCHARS];
 
     if (as->parms[2].items)
 	clear = 1;
@@ -1043,7 +1049,11 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
 	return 1;
     }
     fa = ParseAcl(space);
-    CleanAcl(fa, as->parms[0].items->data);
+
+    code = GetCell(as->parms[0].items->data, cell);
+    if (code == 0) {
+	CleanAcl(fa, cell);
+    }
     for (ti = as->parms[1].items; ti; ti = ti->next) {
 	blob.out_size = AFS_PIOCTL_MAXSIZE;
 	blob.in_size = idf;
@@ -1061,7 +1071,10 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
 	    ta = EmptyAcl(space);
 	else
 	    ta = ParseAcl(space);
-	CleanAcl(ta, ti->data);
+	code = GetCell(ti->data, cell);
+	if (code == 0) {
+	    CleanAcl(ta, cell);
+	}
 	if (ta->dfs != fa->dfs) {
 	    fprintf(stderr,
 		    "%s: incompatible file system types: acl not copied to %s; aborted\n",
@@ -1134,11 +1147,10 @@ GetCell(char *fname, char *cellname)
  * to see.
  */
 static int
-BadName(char *aname, char *fname)
+BadName(char *aname, char *cellname)
 {
     afs_int32 tc, code, id;
     char *nm;
-    char cell[MAXCELLCHARS];
 
     for (nm = aname; (tc = *nm); nm++) {
 	/* all must be '-' or digit to be bad */
@@ -1147,23 +1159,39 @@ BadName(char *aname, char *fname)
     }
 
     /* Go to the PRDB and see if this all number username is valid */
-    code = GetCell(fname, cell);
-    if (code)
+    code = pr_Initialize(1, AFSDIR_CLIENT_ETC_DIRPATH, cellname);
+    if (code != 0) {
 	return 0;
+    }
 
-    pr_Initialize(1, AFSDIR_CLIENT_ETC_DIRPATH, cell);
     code = pr_SNameToId(aname, &id);
     pr_End();
 
+    if (code != 0) {
+	return 0;
+    }
+
     /* 1=>Not-valid; 0=>Valid */
-    return ((!code && (id == ANONYMOUSID)) ? 1 : 0);
+    return (id == ANONYMOUSID) ? 1 : 0;
 }
 
 
-/* clean up an access control list of its bad entries; return 1 if we made
-   any changes to the list, and 0 otherwise */
+/**
+ * Cleans an ACL of stale entries via protection server queries.
+ *
+ * Enumerates the given ACL struct's list of ACL entries, checking for names
+ * that strictly consist only of digits or a leading minus, since these entries
+ * have the potential to be stale. This is since such stale entries cannot have
+ * their UIDs translated to names by the File Server without a protection server
+ * entry.
+ *
+ * @param[in,out]  aa       Acl struct to clean
+ * @param[in]      cellname null-terminated string holding the cell name
+ *
+ * @return number of changes made to ACL
+ */
 static int
-CleanAcl(struct Acl *aa, char *fname)
+CleanAcl(struct Acl *aa, char *cellname)
 {
     struct AclEntry *te, **le, *ne;
     int changes;
@@ -1177,7 +1205,7 @@ CleanAcl(struct Acl *aa, char *fname)
     le = &aa->pluslist;
     for (te = aa->pluslist; te; te = ne) {
 	ne = te->next;
-	if (BadName(te->name, fname)) {
+	if (BadName(te->name, cellname)) {
 	    /* zap this dude */
 	    *le = te->next;
 	    aa->nplus--;
@@ -1190,7 +1218,7 @@ CleanAcl(struct Acl *aa, char *fname)
     le = &aa->minuslist;
     for (te = aa->minuslist; te; te = ne) {
 	ne = te->next;
-	if (BadName(te->name, fname)) {
+	if (BadName(te->name, cellname)) {
 	    /* zap this dude */
 	    *le = te->next;
 	    aa->nminus--;
@@ -1216,9 +1244,12 @@ CleanACLCmd(struct cmd_syndesc *as, void *arock)
     struct AclEntry *te;
     int error = 0;
     char acl_str[AFS_PIOCTL_MAXSIZE + 24];
+    char cell[MAXCELLCHARS];
 
     SetDotDefault(&as->parms[0].items);
     for (ti = as->parms[0].items; ti; ti = ti->next) {
+	changes = 0;
+
 	blob.out_size = AFS_PIOCTL_MAXSIZE;
 	blob.in_size = 0;
 	blob.out = space;
@@ -1240,7 +1271,10 @@ CleanACLCmd(struct cmd_syndesc *as, void *arock)
 	    continue;
 	}
 
-	changes = CleanAcl(ta, ti->data);
+	code = GetCell(ti->data, cell);
+	if (code == 0) {
+	    changes = CleanAcl(ta, cell);
+	}
 
 	if (changes) {
 	    struct acl_stringbuf buf;
