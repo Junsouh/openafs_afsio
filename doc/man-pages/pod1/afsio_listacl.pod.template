@@ -1,0 +1,129 @@
+=head1 NAME
+
+afsio_listacl, afsio_fidlistacl - Display the ACLs of directories in AFS
+
+=head1 SYNOPSIS
+
+=for html
+<div class="synopsis">
+
+B<afsio listacl> S<<< B<-dir> <I<AFS-dirname>>+ >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>] S<<< [B<-realm> <I<realm name>>] >>>
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+B<afsio fidlistacl> S<<< B<-vnode> <I<volume.vnode.uniquifier>>+ >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>] S<<< [B<-realm> <I<realm name>>] >>>
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+=for html
+</div>
+
+=head1 DESCRIPTION
+
+The B<afsio listacl> command displays the ACL of one or more directories
+specified by the B<-dir> argument. The format is identical to that which is
+used in B<fs listacl>, listing the normal rights first in user + rights pairs,
+followed by the negative rights, repeated for every directory given.
+
+The B<afsio fidlistacl> command performs the same operation, but identifies
+the target file by its FID (the standard C<volume.vnode.uniquifier> triple)
+specified in the B<-fid> argument.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-dir> <I<AFS-dirname>>+
+
+Specifies each directory to list the ACL for. This option is used by
+B<afsio listacl>. A path not beginning with F</afs> is interpreted relative to
+the cell's F<root.cell>. A path beginning with F</> but not F</afs> is invalid.
+
+=item B<-fid> <I<volume.vnode.uniquifier>>+
+
+Specifies each directory to list the ACL of as a FID triple (e.g.,
+C<536870915.1.1>). This option is used by B<afsio fidlistacl>.
+
+=item B<-cell> <I<cell name>>
+
+Specifies the AFS cell to operate in.
+
+=item B<-realm> <I<realm name>>
+
+Specifies the Kerberos realm to use for authentication.
+
+=item B<-verbose>
+
+Has no effect for B<afsio listacl> or B<afsio fidlistacl>.
+
+=item B<-clear>
+
+Uses unencrypted (cleartext) connections to file servers.
+
+=item B<-crypt>
+
+Uses encrypted connections to file servers.
+
+=item B<-as-user> <I<username>>
+
+Uses localauth credentials to pretend to be the given user, allowing
+authenticated RXAFS operations without a running kernel client.
+
+=item B<-help>
+
+Prints the online help for this command. All other valid options are
+ignored.
+
+=back
+
+=head1 EXAMPLES
+
+The following lists the ACL of a directory:
+
+   % afsio listacl test
+   Access list for test is
+   Normal rights:
+     system:administrators rlidwka
+     system:anyuser rl
+     tester rlidwka
+
+The following lists the ACL of two directories by FID:
+
+   % afsio fidlistacl 536870915.3.827 536870915.1.1
+   Access list for 536870915.3.827 is
+   Normal rights:
+     system:administrators rlidwka
+     system:anyuser rl
+     tester rlidwka
+
+   Access list for 536870915.1.1 is
+   Normal rights:
+     system:administrators rlidwka
+     system:anyuser rl
+     tester rl
+
+=head1 PRIVILEGE REQUIRED
+
+The issuer must have the C<l> (lookup) permission on the directory in order to
+be able to access the ACL.
+
+The B<-as-user> option requires access to the local key material, which
+is typically only readable by the local superuser C<root> on a server
+machine.
+
+=head1 SEE ALSO
+
+L<afsio(1)>,
+L<afsio_setacl(1)>,
+L<fs_listacl>
+
+=head1 COPYRIGHT
+
+Copyright 2026 Junsouh Hong <junsouh@gmail.com>
+
+This documentation is covered by the IBM Public License Version 1.0.
+This man page was written by Junsouh Hong for OpenAFS.
+
+=cut
