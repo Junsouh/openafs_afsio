@@ -57,6 +57,9 @@
 #include <afs/ihandle.h>
 #include <afs/com_err.h>
 #include <afs/afscp.h>
+#include <afs/acl.h>
+#include <afs/ptuser.h>
+#include <afs/ptclient.h>
 
 #ifdef HAVE_DIRECT_H
 #include <direct.h>
@@ -69,6 +72,7 @@ pthread_key_t uclient_key;
 static int lockFile(struct cmd_syndesc *, void *);
 static int readFile(struct cmd_syndesc *, void *);
 static int writeFile(struct cmd_syndesc *, void *);
+static int listAcl(struct cmd_syndesc *, void *);
 static void printDatarate(void);
 static void summarizeDatarate(struct timeval *, const char *);
 static int CmdProlog(struct cmd_syndesc *, char **, char **,
@@ -434,6 +438,17 @@ main(int argc, char **argv)
 		"volume.vnode.uniquifier");
     cmd_AddParm(ts, "-synthesize", CMD_SINGLE, CMD_OPTIONAL,
 		"create data pattern of specified length instead reading from stdin");
+    common_parms(ts);
+
+    ts = cmd_CreateSyntax("listacl", listAcl, NULL, 0,
+			  "list the ACL of a directory from AFS");
+    cmd_AddParm(ts, "-dir", CMD_LIST, CMD_REQUIRED, "AFS-dirname");
+    common_parms(ts);
+
+    ts = cmd_CreateSyntax("fidlistacl", listAcl, NULL, 0,
+			  "list the ACL of a directory from AFS by FID");
+    cmd_AddParm(ts, "-fid", CMD_LIST, CMD_REQUIRED,
+		"volume.vnode.uniquifier");;
     common_parms(ts);
 
     if (afscp_Init(NULL) != 0)
@@ -1155,3 +1170,106 @@ cleanup:
     afscp_FreeFid(dirvfp);
     return code;
 } /* writeFile */
+
+static int
+listAcl(struct cmd_syndesc *as, void *unused)
+{
+    char *fname = NULL;
+    char *cell = NULL;
+    char *realm = NULL;
+    afs_int32 code = 0, worstcode = 0;
+    struct afscp_venusfid *avfp = NULL;
+    struct aclu_Acl *parsed;
+    struct aclu_AclEntry *te;
+    struct cmd_item *ti;
+    struct aclu_rightsbuf buf;
+
+    if (CmdProlog(as, &cell, &realm, &fname, NULL) != 0) {
+	return -1;
+    }
+
+    afscp_AnonymousAuth(1);
+    if (clear) {
+	afscp_Insecure();
+    }
+
+    if (realm != NULL) {
+	afscp_SetDefaultRealm(realm);
+    }
+
+    if (cell != NULL) {
+	afscp_SetDefaultCell(cell);
+    }
+
+    for (ti = as->parms[0].items; ti != NULL; ti = ti->next) { /* -dir, -fid */
+	struct AFSOpaque acl;
+	avfp = NULL;
+	parsed = NULL;
+	memset(&acl, 0, sizeof(acl));
+
+	fname = ti->data;
+	if (useFid) {
+	    code = GetVenusFidByFid(fname, cell, 0, &avfp);
+	} else {
+	    code = GetVenusFidByPath(fname, cell, &avfp);
+	}
+	if (code != 0) {
+	    afs_com_err(pnp, code, "(directory not found: %s)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+
+	if ((avfp->fid.Vnode & 1) == 0) {
+	    code = ENOENT;
+	    afs_com_err(pnp, code, "(%s is a file, not a directory)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+	code = afscp_FetchACL(avfp, &acl);
+	if (code != 0) {
+	    afs_com_err(pnp, afscp_errno, "(failed to get ACL for %s)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+
+	code = aclu_ParseAcl(acl.AFSOpaque_val, &parsed);
+	if (code != 0) {
+	    afs_com_err(pnp, code, "(failed to parse ACL string for %s)",
+			fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+	if (parsed->dfs) {
+	    code = EINVAL;
+	    afs_com_err(pnp, code, "(DCE/DFS is not supported by afsio for %s)",
+			fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+	printf("Access list for %s is\n", fname);
+	if (parsed->nplus > 0) {
+	    printf("Normal rights:\n");
+	    for (te = parsed->pluslist; te != NULL; te = te->next) {
+		printf("  %s %s\n", te->name,
+		       aclu_StringifyRights(te->rights, &buf));
+	    }
+	}
+	if (parsed->nminus > 0) {
+	    printf("Negative rights:\n");
+	    for (te = parsed->minuslist; te != NULL; te = te->next) {
+		printf("  %s %s\n", te->name,
+		       aclu_StringifyRights(te->rights, &buf));
+	    }
+	}
+
+ cleanup:
+	aclu_FreeAcl(&parsed);
+	xdr_free((xdrproc_t) xdr_AFSOpaque, &acl);
+	afscp_FreeFid(avfp);
+	if (ti->next != NULL) {
+	    printf("\n");
+	}
+    }
+
+    return worstcode;
+} /* listAcl */

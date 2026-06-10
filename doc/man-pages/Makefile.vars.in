@@ -19,6 +19,7 @@ MAN_PAGES = \
   man1/afs_compile_et.1 \
   man1/afsio_apropos.1 \
   man1/afsio_help.1 \
+  man1/afsio_listacl.1 \
   man1/afsio_lock.1 \
   man1/afsio_unlock.1 \
   man1/afsio_read.1 \
