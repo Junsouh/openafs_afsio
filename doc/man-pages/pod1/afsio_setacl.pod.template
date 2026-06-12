@@ -1,0 +1,271 @@
+=head1 NAME
+
+afsio_setacl - Modify the ACLs of directories in AFS
+
+=head1 SYNOPSIS
+
+=for html
+<div class="synopsis">
+
+B<afsio setacl> S<<< B<-dir> <I<AFS-dirname>>+ >>>
+    S<<< B<-acl> <I<access list entries>>+ >>> S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-clearacl>] [B<-negative>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-realm> <I<realm name>>] >>> S<<< [B<-as-user> <I<username>>] >>>
+    [B<-help>]
+
+B<afsio fidsetacl> S<<< B<-vnode> <I<volume.vnode.uniquifier>>+ >>>
+    S<<< B<-acl> <I<access list entries>>+ >>> S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-clearacl>] [B<-negative>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-realm> <I<realm name>>] >>> S<<< [B<-as-user> <I<username>>] >>>
+    [B<-help>]
+
+=for html
+</div>
+
+=head1 DESCRIPTION
+
+The B<afsio setacl> command modifies the ACL of one or more directories
+specified by the B<-dir> argument, according to the B<-acl> argument. The
+expected input format for the B<-acl> argument is identical to that which is
+expected in B<fs setacl>.
+
+The B<afsio fidsetacl> command performs the same operation, but identifies
+the target file by its FID (the standard C<volume.vnode.uniquifier> triple)
+specified in the B<-fid> argument.
+
+To completely erase the existing ACL before adding the new entries,
+provide the B<-clearacl> flag. To add the specified entries to the C<Negative
+rights> section of the ACL (deny rights to specified users or groups),
+provide the B<-negative> flag.
+
+=head1 CAUTIONS
+
+If the ACL already grants certain permissions to a user or group, the default
+behavior is that the permissions specified with the B<fs setacl> command replace
+the existing permissions, rather than being added to them.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-dir> <I<AFS-dirname>>+
+
+Specifies each directory to modify the ACL for. This option is used by
+B<afsio setacl>. A path not beginning with F</afs> is interpreted relative to
+the cell's F<root.cell>. A path beginning with F</> but not F</afs> is invalid.
+
+=item B<-fid> <I<volume.vnode.uniquifier>>+
+
+Specifies each directory to list the ACL of as a FID triple (e.g.,
+C<536870915.1.1>). This option is used by B<afsio fidsetacl>.
+
+=item B<-acl> <I<access list entries>>+
+
+Defines a list of one or more ACL entries, each a pair that names:
+
+=over 4
+
+=item *
+
+A user name or group name as listed in the Protection Database.
+
+=item *
+
+One or more ACL permissions, indicated either by combining the individual
+letters or by one of the four acceptable shorthand words, optionally
+followed by a single plus (+) or minus (-) chracter to request a relative
+ACL change
+
+=back
+
+in that order, separated by a space (thus every instance of this argument
+has two parts). The accepted AFS abbreviations and shorthand words, and
+the meaning of each, are as follows:
+
+=over 4
+
+=item a (administer)
+
+Change the entries on the ACL.
+
+=item d (delete)
+
+Remove files and subdirectories from the directory or move them to other
+directories.
+
+=item i (insert)
+
+Add files or subdirectories to the directory by copying, moving or
+creating.
+
+=item k (lock)
+
+Set read locks or write locks on the files in the directory.
+
+=item l (lookup)
+
+List the files and subdirectories in the directory, stat the directory
+itself, and issue the B<afsio listacl> command to examine the directory's
+ACL.
+
+=item r (read)
+
+Read the contents of files in the directory.
+
+=item w (write)
+
+Modify the contents of files in the directory.
+
+=item A, B, C, D, E, F, G, H
+
+Have no default meaning to the AFS server processes, but are made
+available for applications to use in controlling access to the directory's
+contents in additional ways. The letters must be uppercase.
+
+=item all
+
+Equals all seven permissions (C<rlidwka>).
+
+=item none
+
+No permissions. Removes the user/group from the ACL, but does not
+guarantee they have no permissions if they belong to groups that remain on
+the ACL.
+
+=item read
+
+Equals the C<r> (read) and C<l> (lookup) permissions.
+
+=item write
+
+Equals all permissions except C<a> (administer), that is, C<rlidwk>.
+
+=back
+
+It is acceptable to mix entries that combine the individual letters with
+entries that use the shorthand words, but not use both types of notation
+within an individual pairing of user or group and permissions.
+
+=item B<-clear>
+
+Completely clear the ACL of all its entries before adding the entries specified
+in the B<-acl> argument.
+
+=item B<-negative>
+
+Places the specified ACL entries in the C<Negative rights> section of each
+ACL, explicitly denying the rights to the user or group.
+
+=item B<-cell> <I<cell name>>
+
+Specifies the AFS cell to operate in.
+
+=item B<-realm> <I<realm name>>
+
+Specifies the Kerberos realm to use for authentication.
+
+=item B<-clear>
+
+Uses unencrypted (cleartext) connections to file servers.
+
+=item B<-crypt>
+
+Uses encrypted connections to file servers.
+
+=item B<-as-user> <I<username>>
+
+Uses localauth credentials to pretend to be the given user, allowing
+authenticated RXAFS operations without a running kernel client.
+
+=item B<-help>
+
+Prints the online help for this command. All other valid options are
+ignored.
+
+=back
+
+=head1 EXAMPLES
+
+The following example adds two entries to the C<Normal rights> section of
+the F<test> directory's ACL: the first entry grants C<r> (read)
+and C<l> (lookup) permissions to the group jack:friends, while the other
+(using the C<all> shorthand) gives all permissions to the user C<tester>.
+
+   % afsio setacl -dir test -acl jack:friends rl tester all
+   % afsio listacl -dir test
+   Access list for test is
+   Normal rights:
+     jun:friends rl
+     tester rlidwka
+
+The following sets the acl of multiple directories by FID, also using the
+-clearacl option to completely clear the ACL before performing this action:
+
+   % afsio fidsetacl -fid 536870915.3.827 536870915.1.1 -acl jack all tester \
+     write system:anyuser rl -clearacl
+   % afsio fidlistacl 536870915.3.827 536870915.1.1
+   Access list for 536870915.3.827 is
+   Normal rights:
+     system:anyuser rl
+     jack rlidwka
+     tester rlidwk
+
+   Access list for 536870915.1.1 is
+   Normal rights:
+     system:anyuser rl
+     jack rlidwka
+     tester rlidwk
+
+The following demonstrates the usage of the + and - options to modify the ACLs
+relative to the existing privileges:
+
+   % afsio listacl -dir test
+   Access list for test is
+   Normal rights:
+     system:anyuser rl
+     jack rlidwka
+     tester rlidwk
+
+   % afsio setacl -dir test -acl jack idwka-
+   % afsio listacl -dir test
+   Access list for test is
+   Normal rights:
+     system:anyuser rl
+     jack rl
+     tester rlidwk
+
+   % afsio setacl -dir test -acl jack w+
+   % afsio listacl -dir test
+   Access list for test is
+   Normal rights:
+     system:anyuser rl
+     jack rlw
+     tester rlidwk
+
+=head1 PRIVILEGE REQUIRED
+
+The issuer must have the C<a> (administer) permission on the directory's
+ACL, a member of the system:administrators group, or, as a special case,
+must be the UID owner of the top-level directory of the volume containing
+this directory.  The last provision allows the UID owner of a volume to
+repair accidental ACL errors without requiring intervention by a member of
+system:administrators.
+
+The B<-as-user> option requires access to the local key material, which
+is typically only readable by the local superuser C<root> on a server
+machine.
+
+=head1 SEE ALSO
+
+L<afsio(1)>,
+L<afsio_listacl(1)>,
+L<fs_setacl(1)>
+
+=head1 COPYRIGHT
+
+Copyright 2026 Junsouh Hong <junsouh@gmail.com>
+
+This documentation is covered by the IBM Public License Version 1.0.
+This man page was written by Junsouh Hong for OpenAFS.
+
+=cut

@@ -73,6 +73,7 @@ static int lockFile(struct cmd_syndesc *, void *);
 static int readFile(struct cmd_syndesc *, void *);
 static int writeFile(struct cmd_syndesc *, void *);
 static int listAcl(struct cmd_syndesc *, void *);
+static int setAcl(struct cmd_syndesc *, void *);
 static void printDatarate(void);
 static void summarizeDatarate(struct timeval *, const char *);
 static int CmdProlog(struct cmd_syndesc *, char **, char **,
@@ -451,6 +452,24 @@ main(int argc, char **argv)
 		"volume.vnode.uniquifier");;
     common_parms(ts);
 
+    ts = cmd_CreateSyntax("setacl", setAcl, NULL, 0,
+			  "set the ACL of a directory from AFS");
+    cmd_AddParm(ts, "-dir", CMD_LIST, CMD_REQUIRED, "AFS-dirname");
+    cmd_AddParm(ts, "-acl", CMD_LIST, CMD_REQUIRED, "access list entries");
+    cmd_AddParm(ts, "-clearacl", CMD_FLAG, CMD_OPTIONAL, "clear access list");
+    cmd_AddParm(ts, "-negative", CMD_FLAG, CMD_OPTIONAL,
+		"apply to negative rights");
+    common_parms(ts);
+
+    ts = cmd_CreateSyntax("fidsetacl", setAcl, NULL, 0,
+			  "set the ACL of a directory from AFS by FID");
+    cmd_AddParm(ts, "-fid", CMD_LIST, CMD_REQUIRED, "volume.vnode.uniquifier");
+    cmd_AddParm(ts, "-acl", CMD_LIST, CMD_REQUIRED, "access list entries");
+    cmd_AddParm(ts, "-clearacl", CMD_FLAG, CMD_OPTIONAL, "clear access list");
+    cmd_AddParm(ts, "-negative", CMD_FLAG, CMD_OPTIONAL,
+		"apply to negative rights");
+    common_parms(ts);
+
     if (afscp_Init(NULL) != 0)
 	exit(1);
 
@@ -693,6 +712,149 @@ GetVenusFidByPath(char *fullPath, char *cellName,
 
     return code;
 } /* GetVenusFidByPath */
+
+/*!
+ * Update the given parsed Acl struct with respect to the acl pairs given.
+ *
+ * @param[in]     aclpairs the acl pairs to update the Acl struct with
+ * @param[in]     negative 0 if the positive list should be updated,
+ *			   non-negative otherwise
+ * @param[in,out] parsed   the Acl struct to update
+ *
+ * @return 0 on success, status code on error
+ */
+static int
+UpdateAclEntries(struct cmd_item *aclpairs, int negative,
+		 struct aclu_Acl *parsed)
+{
+    struct cmd_item *aclarg;
+    afs_int32 code = 0;
+    afs_uint32 rights;
+
+    for (aclarg = aclpairs; aclarg != NULL;
+	 aclarg = aclarg->next->next) {
+	char badchar = 0;
+	enum aclu_rights_type rtype;
+	if (aclarg->next == NULL) {
+	    code = EINVAL;
+	    afs_com_err(pnp, code,
+			"(missing second half of user/access pair)");
+	    return code;
+	}
+	code = aclu_ParseRights(aclarg->next->data, &rights, &rtype, &badchar);
+	if (code != 0) {
+	    if (badchar != 0) {
+		afs_com_err(pnp, code, "(illegal rights character '%c')",
+			    badchar);
+	    } else {
+		afs_com_err(pnp, code, "(failed to parse ACL pair %s %s)",
+			    aclarg->data, aclarg->next->data);
+	    }
+	    return code;
+	}
+	if (rtype == ACLU_RTYPE_DESTROY) {
+	    struct aclu_AclEntry *tlist;
+
+	    tlist = negative ? parsed->minuslist : parsed->pluslist;
+	    if (aclu_SearchList(tlist, aclarg->data) == NULL) {
+		continue;
+	    }
+	}
+	code = aclu_UpdateList(parsed, !negative, aclarg->data, rights,
+			       &rtype);
+	if (code != 0) {
+	    afs_com_err(pnp, code, "(failed to modify ACL list)");
+	    return code;
+	}
+    }
+
+    return 0;
+}
+
+struct cleanacl_data {
+    char *cellname;
+    int changed;
+};
+
+/*!
+ * Check the given ACL entry to see if it is a vaid entry
+ *
+ * Entries that are comprised entirely of numbers and '-' characters may be
+ * invalid entries, since that is the form they take once the user or group is
+ * deleted from the pts database. This function checks a single entry to see
+ * if it is valid.
+ *
+ * \param[in]	acl	 the aclu_Acl to check
+ * \param[in]	neg	 nonzero for the negative list, 0 for the positive list
+ * \param[in]	aname	 name of the entry
+ * \param[in]	rights	 rights mask of the entry
+ * \param[out]	rock	 should be cast to struct cleanacl_data, contains number
+ *			 of changes made and cellname
+ * \param[out]	a_remove if the entry was removed or not
+ *
+ * \return error codes
+ */
+static int
+FilterBadName(struct aclu_Acl *acl, int neg, char *aname,
+	      afs_uint32 rights, void *rock, int *a_remove)
+{
+    struct cleanacl_data *data = rock;
+    afs_int32 tc, code, id;
+    char *nm;
+    *a_remove = 0;
+
+    for (nm = aname; (tc = *nm); nm++) {
+	/* all must be '-' or digit to be bad */
+	if (tc != '-' && (tc < '0' || tc > '9')) {
+	    return 0;
+	}
+    }
+
+    /* Go to the PRDB and see if this all number username is valid */
+    code = pr_Initialize(1, AFSDIR_CLIENT_ETC_DIRPATH, data->cellname);
+    if (code != 0) {
+	return code;
+    }
+
+    code = pr_SNameToId(aname, &id);
+    pr_End();
+
+    if (code == 0 && id == ANONYMOUSID) {
+	/* Not-valid */
+	*a_remove = 1;
+	data->changed++;
+    }
+
+    return 0;
+}
+
+/*!
+ * Clean an ACL of its bad entries
+ *
+ * Uses FilterBadName() to clean, check that function for more details.
+ *
+ * \param[in]	aa	 the aclu_Acl to clean
+ * \param[in]	cellname the cell to operate in
+ *
+ * \return number of changed entries
+ */
+static int
+CleanAcl(struct aclu_Acl *aa, char *cellname)
+{
+    int code;
+    struct cleanacl_data data;
+
+    memset(&data, 0, sizeof(data));
+
+    data.cellname = cellname;
+
+    code = aclu_FilterAcl(aa, FilterBadName, &data);
+    if (code != 0) {
+	return 0;
+    }
+
+    return data.changed;
+}
 
 static int
 lockFile(struct cmd_syndesc *as, void *arock)
@@ -1273,3 +1435,127 @@ listAcl(struct cmd_syndesc *as, void *unused)
 
     return worstcode;
 } /* listAcl */
+
+static int
+setAcl(struct cmd_syndesc *as, void *unused)
+{
+    char *fname = NULL;
+    char *cell = NULL;
+    char *realm = NULL;
+    char *result;
+    int fatal = 0;
+    afs_int32 code = 0, worstcode = 0;
+    struct afscp_venusfid *avfp = NULL;
+    struct aclu_Acl *parsed;
+    struct cmd_item *ti;
+    struct aclu_aclbuf buf;
+
+    if (CmdProlog(as, &cell, &realm, &fname, NULL) != 0) {
+	return -1;
+    }
+
+    afscp_AnonymousAuth(1);
+    if (clear) {
+	afscp_Insecure();
+    }
+
+    if (realm != NULL) {
+	afscp_SetDefaultRealm(realm);
+    }
+
+    if (cell != NULL) {
+	afscp_SetDefaultCell(cell);
+    }
+
+    for (ti = as->parms[0].items; ti != NULL; ti = ti->next) { /* -dir, -fid */
+	struct AFSOpaque acl, storeacl;
+	avfp = NULL;
+	parsed = NULL;
+	result = NULL;
+	memset(&acl, 0, sizeof(acl));
+	memset(&buf, 0, sizeof(buf));
+	memset(&storeacl, 0, sizeof(storeacl));
+
+	fname = ti->data;
+	if (useFid) {
+	    code = GetVenusFidByFid(fname, cell, 0, &avfp);
+	} else {
+	    code = GetVenusFidByPath(fname, cell, &avfp);
+	}
+	if (code != 0) {
+	    afs_com_err(pnp, code, "(directory not found: %s)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+
+	if ((avfp->fid.Vnode & 1) == 0) {
+	    code = ENOENT;
+	    afs_com_err(pnp, code, "(%s is a file, not a directory)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+
+	code = afscp_FetchACL(avfp, &acl);
+	if (code != 0) {
+	    afs_com_err(pnp, afscp_errno, "(failed to get ACL for %s)", fname);
+	    worstcode = afscp_errno;
+	    goto cleanup;
+	}
+
+	if (as->parms[2].items) { /* -clearacl */
+	    code = aclu_ParseEmptyAcl(acl.AFSOpaque_val, &parsed);
+	} else {
+	    code = aclu_ParseAcl(acl.AFSOpaque_val, &parsed);
+	}
+	if (code != 0) {
+	    afs_com_err(pnp, code, "(failed to parse/create ACL string for %s)",
+			fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+	if (parsed->dfs) {
+	    code = EINVAL;
+	    afs_com_err(pnp, code, "(DCE/DFS is not supported by afsio for %s)",
+			fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+	CleanAcl(parsed, avfp->cell->name);
+
+	code = UpdateAclEntries(as->parms[1].items, /* -acl */
+				as->parms[3].items != NULL, /* -negative*/
+				parsed);
+	if (code != 0) {
+	    worstcode = code;
+	    fatal = 1;
+	    goto cleanup;
+	}
+
+	result = aclu_AclToNetstring(parsed, &buf);
+	if (result == NULL) {
+	    afs_com_err(pnp, code, "(Failed to serialize ACL for %s)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+
+	storeacl.AFSOpaque_val = buf.sbuf;
+	storeacl.AFSOpaque_len = strlen(buf.sbuf) + 1;
+	code = afscp_StoreACL(avfp, &storeacl);
+
+	if (code != 0) {
+	    afs_com_err(pnp, afscp_errno, "(failed to set ACL for %s)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+
+ cleanup:
+	aclu_FreeAcl(&parsed);
+	xdr_free((xdrproc_t) xdr_AFSOpaque, &acl);
+	afscp_FreeFid(avfp);
+	if (fatal) {
+	    return worstcode;
+	}
+    }
+
+    return worstcode;
+} /* setAcl */
