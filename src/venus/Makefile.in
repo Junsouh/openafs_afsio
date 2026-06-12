@@ -32,7 +32,8 @@ AFSIO_LIBS=${TOP_LIBDIR}/libafscp.a \
 	$(top_builddir)/src/cmd/liboafs_cmd.la \
 	$(top_builddir)/src/util/liboafs_util.la \
 	$(top_builddir)/src/opr/liboafs_opr.la \
-	$(top_builddir)/src/libacl/liboafs_acl.la
+	$(top_builddir)/src/libacl/liboafs_acl.la \
+	$(top_builddir)/src/ptserver/liboafs_prot.la
 
 FSLIBS=$(top_builddir)/src/vlserver/liboafs_vldb.la \
 	 $(top_builddir)/src/rxkad/liboafs_rxkad.la \
