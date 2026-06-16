@@ -644,26 +644,48 @@ SkipLine(const char *astr)
     return astr;
 }
 
-/*
- * Create an empty acl, taking into account whether the acl pointed
- * to by astr is an AFS or DFS acl. Only parse this minimally, so we
- * can recover from problems caused by bogus ACL's (in that case, always
- * assume that the acl is AFS: for DFS, the user can always resort to
- * acl_edit, but for AFS there may be no other way out).
+/**
+ * Creates an empty Acl struct, using an ACL string to obtain DFS information.
+ *
+ * The only part of the input string that is parsed is the first line, since
+ * that is the part containing DFS information, and so that bogus ACLs can be
+ * recovered from. See ParseAcl for information on expected ACL string
+ * format.
+ *
+ * The caller is responsible for freeing the newly created Acl struct by
+ * invoking ZapAcl.
+ *
+ * @param[in]  astr  ACL string to mimic the DFS status and cell from
+ * @param[out] a_acl address of the resulting Acl struct
+ *
+ * @return status codes
+ * @retval 0      success
+ * @retval EINVAL astr or a_acl was NULL, or malformed header line for astr
+ * @retval ENOMEM allocation failed, insufficient memory
  */
-static struct Acl *
-EmptyAcl(char *astr)
+static int
+EmptyAcl(const char *astr, struct Acl **a_acl)
 {
-    struct Acl *tp;
-    int junk;
+    struct Acl *tp = NULL;
+    int code, junk;
+
+    if (astr == NULL || a_acl == NULL) {
+	return EINVAL;
+    }
 
     tp = calloc(sizeof(*tp), 1);
-    assert(tp);
-    tp->nplus = tp->nminus = 0;
-    tp->pluslist = tp->minuslist = 0;
-    tp->dfs = 0;
-    sscanf(astr, "%d dfs:%d %1024s", &junk, &tp->dfs, tp->cell);
-    return tp;
+    if (tp == NULL) {
+	return ENOMEM;
+    }
+    code = sscanf(astr, "%d dfs:%d %1024s", &junk, &tp->dfs, tp->cell);
+    /* A DCE/DFS header would result in 3, a regular AFS header 1 */
+    if (code != 1 && code != 3) {
+	free(tp);
+	return EINVAL;
+    }
+
+    *a_acl = tp;
+    return 0;
 }
 
 /**
@@ -1055,8 +1077,10 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 
 	if (ta)
 	    ZapAcl(ta);
-	if (clear)
-	    ta = EmptyAcl(space);
+	if (clear) {
+	    code = EmptyAcl(space, &ta);
+	    opr_Assert(code == 0);
+	}
 	else {
 	    code = ParseAcl(space, &ta);
 	    opr_Assert(code == 0);
@@ -1218,8 +1242,10 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
 
 	if (ta)
 	    ZapAcl(ta);
-	if (clear)
-	    ta = EmptyAcl(space);
+	if (clear) {
+	    code = EmptyAcl(space, &ta);
+	    opr_Assert(code == 0);
+	}
 	else {
 	    code = ParseAcl(space, &ta);
 	    opr_Assert(code == 0);
