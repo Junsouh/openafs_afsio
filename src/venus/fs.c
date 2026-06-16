@@ -634,8 +634,8 @@ PruneList(struct AclEntry **ae, int dfs)
     return ctr;
 }
 
-static char *
-SkipLine(char *astr)
+static const char *
+SkipLine(const char *astr)
 {
     while (*astr != '\0' && *astr != '\n')
 	astr++;
@@ -666,62 +666,152 @@ EmptyAcl(char *astr)
     return tp;
 }
 
-static struct Acl *
-ParseAcl(char *astr)
+/**
+ * Creates a new Acl struct from an ACL string.
+ *
+ * The expected format of the input string is the standard AFS ACL string
+ * format. The first two lines are formatted as follows:
+ *
+ * <nplus> [dfs:<type> <cell>]
+ * <nminus>
+ *
+ * The dfs:<type> <cell> portion of the first line is only present for DFS ACLs,
+ * AFS ACLs omit this part.
+ *
+ * The next nplus lines represent the positive entries, formatted as
+ * <name> <rights>, where <rights> is an integer rights bitmask. The same is
+ * true for the following nminus lines after the last line representing a
+ * positive entry.
+ *
+ * The caller is responsible for freeing the newly created Acl struct by
+ * invoking ZapAcl.
+ *
+ * @param[in]  astr  ACL string to construct the Acl struct from
+ * @param[out] a_acl address of the resulting Acl struct
+ *
+ * @return status codes
+ * @retval 0      success
+ * @retval EINVAL astr or a_acl was NULL, or astr was malformed
+ * @retval ENOMEM allocation failed, insufficient memory
+ */
+static int
+ParseAcl(const char *astr, struct Acl **a_acl)
 {
+    size_t namelen;
+    int code;
     int nplus = 0, nminus = 0, i, trights = 0;
     char tname[MAXNAME + 1] = "";
-    struct AclEntry *first, *last, *tl;
-    struct Acl *ta;
+    struct AclEntry *last, *tl;
+    struct Acl *ta = NULL;
+
+    if (astr == NULL || a_acl == NULL) {
+	code = EINVAL;
+	goto done;
+    }
+    *a_acl = NULL;
 
     ta = calloc(sizeof(*ta), 1);
-    assert(ta);
-    ta->dfs = 0;
-    sscanf(astr, "%d dfs:%d %1024s", &ta->nplus, &ta->dfs, ta->cell);
+    if (ta == NULL) {
+	code = ENOMEM;
+	goto done;
+    }
+
+    code = sscanf(astr, "%d dfs:%d %1024s", &ta->nplus, &ta->dfs, ta->cell);
+    /* A DCE/DFS header would result in 3, a regular AFS header 1 */
+    if (code != 1 && code != 3) { 
+	code = EINVAL;
+	goto done;
+    }
+
     astr = SkipLine(astr);
-    sscanf(astr, "%d", &ta->nminus);
+    code = sscanf(astr, "%d", &ta->nminus);
+    if (code != 1) {
+	code = EINVAL;
+	goto done;
+    }
+
     astr = SkipLine(astr);
 
     nplus = ta->nplus;
+
+    last = NULL;
+    for (i = 0; i < nplus; i++) {
+	code = sscanf(astr, "%99s %d", tname, &trights);
+	if (code != 2) {
+	    code = EINVAL;
+	    goto done;
+	}
+
+	astr = SkipLine(astr);
+	tl = calloc(sizeof(*tl), 1);
+	if (tl == NULL) {
+	    code = ENOMEM;
+	    goto done;
+	}
+
+	namelen = strlcpy(tl->name, tname, sizeof(tl->name));
+	if (namelen >= sizeof(tl->name)) {
+	    free(tl);
+	    code = EINVAL;
+	    goto done;
+	}
+
+	if (ta->pluslist == NULL) {
+	    ta->pluslist = tl;
+	}
+
+	tl->rights = trights;
+	tl->next = NULL;
+	if (last != NULL) {
+	    last->next = tl;
+	}
+	last = tl;
+    }
+
+    last = NULL;
     nminus = ta->nminus;
 
-    last = 0;
-    first = 0;
-    for (i = 0; i < nplus; i++) {
-	sscanf(astr, "%99s %d", tname, &trights);
-	astr = SkipLine(astr);
-	tl = calloc(sizeof(*tl), 1);
-	assert(tl);
-	if (!first)
-	    first = tl;
-	strcpy(tl->name, tname);
-	tl->rights = trights;
-	tl->next = 0;
-	if (last)
-	    last->next = tl;
-	last = tl;
-    }
-    ta->pluslist = first;
-
-    last = 0;
-    first = 0;
     for (i = 0; i < nminus; i++) {
-	sscanf(astr, "%99s %d", tname, &trights);
+	code = sscanf(astr, "%99s %d", tname, &trights);
+	if (code != 2) {
+	    code = EINVAL;
+	    goto done;
+	}
+
 	astr = SkipLine(astr);
 	tl = calloc(sizeof(*tl), 1);
-	assert(tl);
-	if (!first)
-	    first = tl;
-	strcpy(tl->name, tname);
+	if (tl == NULL) {
+	    code = ENOMEM;
+	    goto done;
+	}
+
+	namelen = strlcpy(tl->name, tname, sizeof(tl->name));
+	if (namelen >= sizeof(tl->name)) {
+	    free(tl);
+	    code = EINVAL;
+	    goto done;
+	}
+
+	if (ta->minuslist == NULL) {
+	    ta->minuslist = tl;
+	}
+
 	tl->rights = trights;
-	tl->next = 0;
-	if (last)
+	tl->next = NULL;
+	if (last != NULL) {
 	    last->next = tl;
+	}
 	last = tl;
     }
-    ta->minuslist = first;
 
-    return ta;
+    *a_acl = ta;
+    code = 0;
+
+done:
+    if (code != 0) {
+	ZapAcl(ta);
+    }
+    return code;
 }
 
 static int
@@ -952,7 +1042,8 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 
 	if (ta)
 	    ZapAcl(ta);
-	ta = ParseAcl(space);
+	code = ParseAcl(space, &ta);
+	opr_Assert(code == 0);
 	if (!plusp && ta->dfs) {
 	    fprintf(stderr,
 		    "%s: %s: you may not use the -negative switch with DFS acl's.\n%s",
@@ -966,8 +1057,10 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 	    ZapAcl(ta);
 	if (clear)
 	    ta = EmptyAcl(space);
-	else
-	    ta = ParseAcl(space);
+	else {
+	    code = ParseAcl(space, &ta);
+	    opr_Assert(code == 0);
+	}
 	code = GetCell(ti->data, cell);
 	if (code == 0) {
 	    CleanAcl(ta, cell);
@@ -1105,7 +1198,8 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
 	Die(errno, as->parms[0].items->data);
 	return 1;
     }
-    fa = ParseAcl(space);
+    code = ParseAcl(space, &fa);
+    opr_Assert(code == 0);
 
     code = GetCell(as->parms[0].items->data, cell);
     if (code == 0) {
@@ -1126,8 +1220,10 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
 	    ZapAcl(ta);
 	if (clear)
 	    ta = EmptyAcl(space);
-	else
-	    ta = ParseAcl(space);
+	else {
+	    code = ParseAcl(space, &ta);
+	    opr_Assert(code == 0);
+	}
 	code = GetCell(ti->data, cell);
 	if (code == 0) {
 	    CleanAcl(ta, cell);
@@ -1322,7 +1418,8 @@ CleanACLCmd(struct cmd_syndesc *as, void *arock)
 
 	if (ta)
 	    ZapAcl(ta);
-	ta = ParseAcl(space);
+	code = ParseAcl(space, &ta);
+	opr_Assert(code == 0);
 	if (ta->dfs) {
 	    fprintf(stderr,
 		    "%s: cleanacl is not supported for DFS access lists.\n",
@@ -1412,7 +1509,8 @@ ListACLCmd(struct cmd_syndesc *as, void *arock)
 	    error = 1;
 	    continue;
 	}
-	ta = ParseAcl(space);
+	code = ParseAcl(space, &ta);
+	opr_Assert(code == 0);
         if (as->parms[3].items) { 			/* -cmd */
             printf("fs setacl -dir %s -acl ", ti->data);
             if (ta->nplus > 0) {
