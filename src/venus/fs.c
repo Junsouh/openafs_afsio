@@ -113,7 +113,7 @@ ZapAcl(struct Acl *acl)
 }
 
 static int
-foldcmp(char *a, char *b)
+foldcmp(const char *a, const char *b)
 {
     char t, u;
     while (1) {
@@ -469,7 +469,7 @@ ParseRights(const char *rights, int is_dfs, enum rtype *a_rights_type,
 }
 
 static struct AclEntry *
-FindList(struct AclEntry *alist, char *aname)
+FindList(struct AclEntry *alist, const char *aname)
 {
     while (alist) {
 	if (!foldcmp(alist->name, aname))
@@ -496,54 +496,109 @@ SetDotDefault(struct cmd_item **aitemp)
     *aitemp = ti;
 }
 
-static void
-ChangeList(struct Acl *al, afs_int32 plus, char *aname, afs_int32 arights,
-	   enum rtype *artypep)
+/**
+ * Modifies given ACL according to given arguments.
+ *
+ * Locates ACL entry with name given in aname. If an entry with the name given
+ * does not exist, and the rtype given is not reldel, a new entry will be
+ * created and inserted. If reldel was given, nothing will happen rights
+ * cannot be removed from a nonexistent entry.
+ *
+ * Entries with 0 rights after the change will be deleted.
+ *
+ * @param[in,out]  al      Acl struct to modify
+ * @param[in]      plus    0 indicates modifying the negative list, nonzero
+ *			   indicates modifying the positive list
+ * @param[in]      aname   name of the AclEntry to modify/create
+ * @param[in]      arights rights bitmask to apply
+ * @param[in]      artypep method to incorporate arights with
+ *			   (see enum rtype: set, reladd, reldel, etc.)
+ *
+ * @return status codes
+ * @retval 0 success
+ * @retval ENOMEM calloc call failed, insufficient memory
+ * @retval EINVAL passed in aname argument was too long, causing truncation, or
+ *		  the passed enum type is invalid
+ */
+static int
+ChangeList(struct Acl *al, afs_int32 plus, const char *aname, afs_int32 arights,
+	   const enum rtype *artypep)
 {
-    struct AclEntry *tlist;
-    tlist = (plus ? al->pluslist : al->minuslist);
-    tlist = FindList(tlist, aname);
-    if (tlist) {
-	/* Found the item already in the list.
-	 * modify rights in case of reladd and reladd only,
-	 * use standard - add, ie. set - otherwise
-	 */
-        if ( artypep == NULL )
-            tlist->rights = arights;
-        else if ( *artypep == reladd )
-            tlist->rights |= arights;
-        else if ( *artypep == reldel )
-            tlist->rights &= ~arights;
-        else
-            tlist->rights = arights;
+    size_t namelen;
+    struct AclEntry *tentry;
 
-	if (plus)
-	    al->nplus -= PruneList(&al->pluslist, al->dfs);
-	else
-	    al->nminus -= PruneList(&al->minuslist, al->dfs);
-	return;
+    if (plus) {
+	tentry = FindList(al->pluslist, aname);
+    } else {
+	tentry = FindList(al->minuslist, aname);
     }
-    if ( artypep != NULL && *artypep == reldel )
-        return;                 /* can't reduce non-existing rights   */
+
+    if (tentry != NULL) {
+	/*
+	 * Found the item already in the list. Modify rights in case of reladd
+	 * and reladd only, use standard - add, ie. set - otherwise
+	 */
+	if (artypep == NULL) {
+	    tentry->rights = arights;
+	} else {
+	    switch (*artypep) {
+	    case reladd:
+		tentry->rights |= arights;
+		break;
+	    case reldel:
+		tentry->rights &= ~arights;
+		break;
+	    case add:
+	    case destroy:
+	    case deny:
+		tentry->rights = arights;
+		break;
+	    default:
+		return EINVAL;
+	    }
+	}
+
+	if (plus) {
+	    al->nplus -= PruneList(&al->pluslist, al->dfs);
+	} else {
+	    al->nminus -= PruneList(&al->minuslist, al->dfs);
+	}
+	return 0;
+    }
+    if (artypep != NULL && *artypep == reldel) {
+	return 0;                 /* can't reduce non-existing rights   */
+    }
 
     /* Otherwise we make a new item and plug in the new data. */
-    tlist = malloc(sizeof(struct AclEntry));
-    assert(tlist);
-    strcpy(tlist->name, aname);
-    tlist->rights = arights;
-    if (plus) {
-	tlist->next = al->pluslist;
-	al->pluslist = tlist;
-	al->nplus++;
-	if (arights == 0 || arights == -1)
-	    al->nplus -= PruneList(&al->pluslist, al->dfs);
-    } else {
-	tlist->next = al->minuslist;
-	al->minuslist = tlist;
-	al->nminus++;
-	if (arights == 0)
-	    al->nminus -= PruneList(&al->minuslist, al->dfs);
+    tentry = calloc(1, sizeof(*tentry));
+    if (tentry == NULL) {
+	return ENOMEM;
     }
+
+    namelen = strlcpy(tentry->name, aname, sizeof(tentry->name));
+    if (namelen >= sizeof(tentry->name)) {
+	free(tentry);
+	return EINVAL;
+    }
+
+    tentry->rights = arights;
+
+    if (plus) {
+	tentry->next = al->pluslist;
+	al->pluslist = tentry;
+	al->nplus++;
+	if (arights == 0 || arights == -1) {
+	    al->nplus -= PruneList(&al->pluslist, al->dfs);
+	}
+    } else {
+	tentry->next = al->minuslist;
+	al->minuslist = tentry;
+	al->nminus++;
+	if (arights == 0) {
+	    al->nminus -= PruneList(&al->minuslist, al->dfs);
+	}
+    }
+    return 0;
 }
 
 static void
@@ -953,7 +1008,8 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 		plusp = 0;
 	    if (rtype == destroy && ta->dfs)
 		rights = -1;
-	    ChangeList(ta, plusp, ui->data, rights, &rtype);
+	    code = ChangeList(ta, plusp, ui->data, rights, &rtype);
+	    opr_Assert(code == 0);
 	}
 	code = AclToString(ta, acl_str, sizeof(acl_str));
 	opr_Assert(code == 0);
@@ -1093,10 +1149,14 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
 	    strcpy(ta->cell, fa->cell);
 	}
                                 /* NULL rtype for standard handling   */
-	for (tp = fa->pluslist; tp; tp = tp->next)
-	    ChangeList(ta, 1, tp->name, tp->rights, NULL);
-	for (tp = fa->minuslist; tp; tp = tp->next)
-	    ChangeList(ta, 0, tp->name, tp->rights, NULL);
+	for (tp = fa->pluslist; tp; tp = tp->next) {
+	    code = ChangeList(ta, 1, tp->name, tp->rights, NULL);
+	    opr_Assert(code == 0);
+	}
+	for (tp = fa->minuslist; tp; tp = tp->next) {
+	    code = ChangeList(ta, 0, tp->name, tp->rights, NULL);
+	    opr_Assert(code == 0);
+	}
 	code = AclToString(ta, acl_str, sizeof(acl_str));
 	opr_Assert(code == 0);
 
