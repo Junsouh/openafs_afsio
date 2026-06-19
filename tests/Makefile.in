@@ -18,7 +18,8 @@ SUBDIRS = \
     volser \
     opr \
     rx \
-    rxgk
+    rxgk \
+    venus
 
 all: runtests
 	@for A in $(SUBDIRS); do cd $$A && $(MAKE) $@ && cd .. || exit 1; done

@@ -159,7 +159,8 @@ AC_CONFIG_FILES([
     tests/rxgk/Makefile
     tests/tap/Makefile
     tests/util/Makefile
-    tests/volser/Makefile])
+    tests/volser/Makefile
+    tests/venus/Makefile])
 
 AS_CASE([$AFS_SYSNAME],
   [*_darwin_*],
