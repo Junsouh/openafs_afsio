@@ -102,14 +102,30 @@ struct vcxstat2 {
     char mvstat;
 };
 
+/**
+ * Frees an Acl struct and all of its entries.
+ *
+ * If the pointed-to Acl struct is NULL, the function does nothing. On return,
+ * the caller's pointer (*a_acl) is set to NULL to avoid dangling pointers.
+ *
+ * @param[in,out] a_acl address of the Acl struct pointer to be freed, this Acl
+ *			struct pointer (*a_acl) is set to NULL on return
+ */
 static void
-ZapAcl(struct Acl *acl)
+ZapAcl(struct Acl **a_acl)
 {
-    if (!acl)
+    struct Acl *acl;
+
+    if (a_acl == NULL || *a_acl == NULL) {
 	return;
+    }
+    acl = *a_acl;
+
     ZapList(acl->pluslist);
     ZapList(acl->minuslist);
     free(acl);
+
+    *a_acl = NULL;
 }
 
 static int
@@ -830,7 +846,7 @@ ParseAcl(const char *astr, struct Acl **a_acl)
 
 done:
     if (code != 0) {
-	ZapAcl(ta);
+	ZapAcl(&ta);
     }
     return code;
 }
@@ -1062,7 +1078,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 	}
 
 	if (ta)
-	    ZapAcl(ta);
+	    ZapAcl(&ta);
 	code = ParseAcl(space, &ta);
 	opr_Assert(code == 0);
 	if (!plusp && ta->dfs) {
@@ -1075,7 +1091,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 	}
 
 	if (ta)
-	    ZapAcl(ta);
+	    ZapAcl(&ta);
 	if (clear) {
 	    code = EmptyAcl(space, &ta);
 	    opr_Assert(code == 0);
@@ -1093,7 +1109,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 	    if (!ui->next) {
 		fprintf(stderr,
 			"%s: Missing second half of user/access pair.\n", pn);
-		ZapAcl(ta);
+		ZapAcl(&ta);
 		return 1;
 	    }
 	    code = ParseRights(ui->next->data, ta->dfs, &rtype, &rights, &idx);
@@ -1110,7 +1126,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 				pn, illegal_char);
 		    }
 		}
-		ZapAcl(ta);
+		ZapAcl(&ta);
 		exit(1);
 	    }
 	    if (rtype == destroy && !ta->dfs) {
@@ -1189,7 +1205,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 	}
     }
     if (ta)
-	ZapAcl(ta);
+	ZapAcl(&ta);
     return error;
 }
 
@@ -1239,7 +1255,7 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
 	}
 
 	if (ta)
-	    ZapAcl(ta);
+	    ZapAcl(&ta);
 	if (clear) {
 	    code = EmptyAcl(space, &ta);
 	    opr_Assert(code == 0);
@@ -1297,8 +1313,8 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
 	}
     }
     if (ta)
-	ZapAcl(ta);
-    ZapAcl(fa);
+	ZapAcl(&ta);
+    ZapAcl(&fa);
     return error;
 }
 
@@ -1441,7 +1457,7 @@ CleanACLCmd(struct cmd_syndesc *as, void *arock)
 	}
 
 	if (ta)
-	    ZapAcl(ta);
+	    ZapAcl(&ta);
 	code = ParseAcl(space, &ta);
 	opr_Assert(code == 0);
 	if (ta->dfs) {
@@ -1506,7 +1522,7 @@ CleanACLCmd(struct cmd_syndesc *as, void *arock)
 	    printf("Access list for %s is fine.\n", ti->data);
     }
     if (ta)
-	ZapAcl(ta);
+	ZapAcl(&ta);
     return error;
 }
 
@@ -1588,7 +1604,7 @@ ListACLCmd(struct cmd_syndesc *as, void *arock)
 	    if (ti->next)
 	        printf("\n");
 	}
-	ZapAcl(ta);
+	ZapAcl(&ta);
     }
     return error;
 }
