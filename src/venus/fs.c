@@ -245,85 +245,66 @@ static const afs_int32 dfs_bitmap[256] = {
     ['H'] = DFS_USR7
 };
 
-static int
-PRights(afs_int32 arights, int dfs)
+struct acl_stringbuf {
+    char sbuf[16];
+};
+
+/**
+ * Converts an ACL bitmask into a human-readable string.
+ *
+ * Translates an internal bitmask of access rights into a string representation.
+ * The output format is determined by whether the rights are AFS or DFS.
+ *
+ * @param[in]  rights   bitmask of access rights to stringify
+ * @param[in]  is_dfs   non-zero if the rights are DFS
+ * @param[out] a_strbuf caller-provided output buffer
+ *
+ * @return null-terminated human-readable string
+ */
+static char *
+StringifyRights(afs_int32 rights, int is_dfs, struct acl_stringbuf *a_strbuf)
 {
-    if (!dfs) {
-	if (arights & PRSFS_READ)
-	    printf("r");
-	if (arights & PRSFS_LOOKUP)
-	    printf("l");
-	if (arights & PRSFS_INSERT)
-	    printf("i");
-	if (arights & PRSFS_DELETE)
-	    printf("d");
-	if (arights & PRSFS_WRITE)
-	    printf("w");
-	if (arights & PRSFS_LOCK)
-	    printf("k");
-	if (arights & PRSFS_ADMINISTER)
-	    printf("a");
-	if (arights & PRSFS_USR0)
-	    printf("A");
-	if (arights & PRSFS_USR1)
-	    printf("B");
-	if (arights & PRSFS_USR2)
-	    printf("C");
-	if (arights & PRSFS_USR3)
-	    printf("D");
-	if (arights & PRSFS_USR4)
-	    printf("E");
-	if (arights & PRSFS_USR5)
-	    printf("F");
-	if (arights & PRSFS_USR6)
-	    printf("G");
-	if (arights & PRSFS_USR7)
-	    printf("H");
-    } else {
-	if (arights & DFS_READ)
-	    printf("r");
-	else
-	    printf("-");
-	if (arights & DFS_WRITE)
-	    printf("w");
-	else
-	    printf("-");
-	if (arights & DFS_EXECUTE)
-	    printf("x");
-	else
-	    printf("-");
-	if (arights & DFS_CONTROL)
-	    printf("c");
-	else
-	    printf("-");
-	if (arights & DFS_INSERT)
-	    printf("i");
-	else
-	    printf("-");
-	if (arights & DFS_DELETE)
-	    printf("d");
-	else
-	    printf("-");
-	if (arights & (DFS_USRALL))
-	    printf("+");
-	if (arights & DFS_USR0)
-	    printf("A");
-	if (arights & DFS_USR1)
-	    printf("B");
-	if (arights & DFS_USR2)
-	    printf("C");
-	if (arights & DFS_USR3)
-	    printf("D");
-	if (arights & DFS_USR4)
-	    printf("E");
-	if (arights & DFS_USR5)
-	    printf("F");
-	if (arights & DFS_USR6)
-	    printf("G");
-	if (arights & DFS_USR7)
-	    printf("H");
+    int idx, buf_i;
+    int use_placeholder;
+    const char *bitmap_order;
+    const afs_int32 *bitmap_table;
+
+    if (a_strbuf == NULL) {
+	return "(null)";
     }
-    return 0;
+
+    memset(a_strbuf, 0, sizeof(*a_strbuf));
+
+    if (is_dfs) {
+	bitmap_order = "rwxcidABCDEFGH";
+	bitmap_table = dfs_bitmap;
+	use_placeholder = 1;
+    } else {
+	bitmap_order = "rlidwkaABCDEFGH";
+	bitmap_table = afs_bitmap;
+	use_placeholder = 0;
+    }
+
+    buf_i = 0;
+    for (idx = 0; bitmap_order[idx] != '\0'; idx++) {
+	unsigned char rc = bitmap_order[idx];
+	if (is_dfs && rc == 'A') {
+	    if ((rights & DFS_USRALL) != 0) {
+		a_strbuf->sbuf[buf_i] = '+';
+		buf_i++;
+	    }
+	    use_placeholder = 0;
+	}
+	if ((rights & bitmap_table[rc]) != 0) {
+	    a_strbuf->sbuf[buf_i] = rc;
+	    buf_i++;
+	} else if (use_placeholder) {
+	    a_strbuf->sbuf[buf_i] = '-';
+	    buf_i++;
+	}
+    }
+
+    return a_strbuf->sbuf;
 }
 
 /* this function returns TRUE (1) if the file is in AFS, otherwise false (0) */
@@ -1201,6 +1182,7 @@ CleanACLCmd(struct cmd_syndesc *as, void *arock)
 	changes = CleanAcl(ta, ti->data);
 
 	if (changes) {
+	    struct acl_stringbuf buf;
 	    /* now set the acl */
 	    blob.in = AclToString(ta);
 	    blob.in_size = strlen(blob.in) + 1;
@@ -1229,16 +1211,14 @@ CleanACLCmd(struct cmd_syndesc *as, void *arock)
 		    printf("Normal rights:\n");
 		for (te = ta->pluslist; te; te = te->next) {
 		    printf("  %s ", te->name);
-		    PRights(te->rights, ta->dfs);
-		    printf("\n");
+		    printf("%s\n", StringifyRights(te->rights, ta->dfs, &buf));
 		}
 	    }
 	    if (ta->nminus > 0) {
 		printf("Negative rights:\n");
 		for (te = ta->minuslist; te; te = te->next) {
 		    printf("  %s ", te->name);
-		    PRights(te->rights, ta->dfs);
-		    printf("\n");
+		    printf("%s\n", StringifyRights(te->rights, ta->dfs, &buf));
 		}
 	    }
 	    if (ti->next)
@@ -1261,6 +1241,7 @@ ListACLCmd(struct cmd_syndesc *as, void *arock)
     struct cmd_item *ti;
     int idf = getidf(as, parm_listacl_id);
     int error = 0;
+    struct acl_stringbuf buf;
 
     SetDotDefault(&as->parms[0].items);
     for (ti = as->parms[0].items; ti; ti = ti->next) {
@@ -1279,7 +1260,7 @@ ListACLCmd(struct cmd_syndesc *as, void *arock)
             if (ta->nplus > 0) {
                 for (te = ta->pluslist; te; te = te->next) {
                     printf("  %s ", te->name);
-                    PRights(te->rights, ta->dfs);
+		    printf("%s", StringifyRights(te->rights, ta->dfs, &buf));
                 }
             }
             printf("\n");
@@ -1287,7 +1268,7 @@ ListACLCmd(struct cmd_syndesc *as, void *arock)
                 printf("fs setacl -dir %s -acl ", ti->data);
                 for (te = ta->minuslist; te; te = te->next) {
                     printf("  %s ", te->name);
-                    PRights(te->rights, ta->dfs);
+		    printf("%s", StringifyRights(te->rights, ta->dfs, &buf));
                 }
                 printf(" -negative\n");
             }
@@ -1314,16 +1295,14 @@ ListACLCmd(struct cmd_syndesc *as, void *arock)
 		    printf("Normal rights:\n");
 	        for (te = ta->pluslist; te; te = te->next) {
 		    printf("  %s ", te->name);
-		    PRights(te->rights, ta->dfs);
-		    printf("\n");
+		    printf("%s\n", StringifyRights(te->rights, ta->dfs, &buf));
 	        }
 	    }
 	    if (ta->nminus > 0) {
 	        printf("Negative rights:\n");
 	        for (te = ta->minuslist; te; te = te->next) {
 		    printf("  %s ", te->name);
-		    PRights(te->rights, ta->dfs);
-		    printf("\n");
+		    printf("%s\n", StringifyRights(te->rights, ta->dfs, &buf));
 	        }
 	    }
 	    if (ti->next)
@@ -1339,6 +1318,7 @@ GetCallerAccess(struct cmd_syndesc *as, void *arock)
 {
     struct cmd_item *ti;
     int error = 0;
+    struct acl_stringbuf buf;
 
     SetDotDefault(&as->parms[0].items);
     for (ti = as->parms[0].items; ti; ti = ti->next) {
@@ -1355,8 +1335,7 @@ GetCallerAccess(struct cmd_syndesc *as, void *arock)
             continue;
         }
         printf("Callers access to %s is ", ti->data);
-        PRights(stat.callerAccess, 0);
-        printf("\n");
+	printf("%s\n", StringifyRights(stat.callerAccess, 0, &buf));
     }
     return error;
 }
