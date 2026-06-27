@@ -33,6 +33,7 @@ dest: man
 		$(INSTALL_DATA) $$M $(DEST)/man/$$M ; \
 	    done; \
 	    $(LN) -fs afsio_lock.1 $(DEST)/man/man1/afsio_fidlock.1 ; \
+	    $(LN) -fs afsio_lsmount.1 $(DEST)/man/man1/afsio_fidlsmount.1 ; \
 	    $(LN) -fs afsio_listacl.1 $(DEST)/man/man1/afsio_fidlistacl.1 ; \
 	    $(LN) -fs afsio_read.1 $(DEST)/man/man1/afsio_fidread.1 ; \
 	    $(LN) -fs afsio_read.1 $(DEST)/man/man1/afsio_readdir.1 ; \

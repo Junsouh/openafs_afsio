@@ -74,6 +74,7 @@ static int readFile(struct cmd_syndesc *, void *);
 static int writeFile(struct cmd_syndesc *, void *);
 static int listAcl(struct cmd_syndesc *, void *);
 static int setAcl(struct cmd_syndesc *, void *);
+static int listMount(struct cmd_syndesc *, void *);
 static void printDatarate(void);
 static void summarizeDatarate(struct timeval *, const char *);
 static int CmdProlog(struct cmd_syndesc *, char **, char **,
@@ -102,6 +103,7 @@ static int Timezone;            /* Roken gettimeofday ignores the timezone */
 static struct timezone Timezone;
 #endif
 
+#define MOUNTSTR_MAX 1024
 #define BUFFLEN 65536
 #define WRITEBUFLEN (BUFFLEN * 1024)
 #define MEGABYTE_F 1048576.0f
@@ -474,6 +476,17 @@ main(int argc, char **argv)
 		"apply to negative rights");
     common_parms(ts);
 
+    ts = cmd_CreateSyntax("lsmount", listMount, NULL, 0,
+			  "list the ACL of a directory from AFS");
+    cmd_AddParm(ts, "-dir", CMD_LIST, CMD_REQUIRED, "AFS-dirname");
+    common_parms(ts);
+
+    ts = cmd_CreateSyntax("fidlsmount", listMount, NULL, 0,
+			  "list the ACL of a directory from AFS");
+    cmd_AddParm(ts, "-fid", CMD_LIST, CMD_REQUIRED,
+		"volume.vnode.uniquifier");;
+    common_parms(ts);
+
     if (afscp_Init(NULL) != 0)
 	exit(1);
 
@@ -675,6 +688,61 @@ BreakUpPath(char *fullPath, char **dirName, char **baseName)
     }
     return code;
 } /* BreakUpPath */
+
+/*!
+ * Find the fid of the parent for a path.
+ *
+ * Given a path in afs, break the path into its base and parent, much like
+ * BreakUpPath, and also find the fid for the parent. This function assumes that
+ * if the path given is only a base, i.e. "test" and not "dir/test", the parent
+ * is the cell root.
+ *
+ * \param[in]	path      file path
+ * \param[out]	parentfid pointer to fid info to be filled in
+ * \param[out]	basename  pointer to base string to be filled in
+ * \param[out]	dirname   pointer to parent dir string to be filled in
+ *
+ * \return status code
+ */
+
+static int
+GetParentFid(char *path, struct afscp_venusfid **parentfid, char **basename,
+	     char **dirname)
+{
+    afs_int32 code = 0;
+
+    if (parentfid == NULL || basename == NULL || path == NULL ||
+	dirname == NULL) {
+	code = EINVAL;
+	return code;
+    }
+    *parentfid = NULL;
+    *dirname = NULL;
+    *basename = NULL;
+
+    code = BreakUpPath(path, dirname, basename);
+    if (code == 0) {
+	code = EINVAL;
+	return code;
+    } else if (code == 1) {
+	if (*basename == NULL) {
+	    code = EINVAL;
+	    return code;
+	}
+	*parentfid = afscp_ResolvePath(""); /* Get the cell root fid */
+	if (*parentfid == NULL) {
+	    code = afscp_errno != 0 ? afscp_errno : EINVAL;
+	    return code;
+	}
+    } else {
+	code = GetVenusFidByPath(*dirname, NULL, parentfid);
+	if (code != 0) {
+	    return code;
+	}
+    }
+
+    return 0;
+}
 
 /*!
  * Get the VenusFid info available for the file at AFS path 'fullPath'.
@@ -1571,3 +1639,138 @@ setAcl(struct cmd_syndesc *as, void *unused)
 
     return worstcode;
 } /* setAcl */
+
+static int
+listMount(struct cmd_syndesc *as, void *unused)
+{
+    char *fname = NULL;
+    char *cell = NULL;
+    char *realm = NULL;
+    afs_int32 worstcode = 0;
+    struct cmd_item *ti;
+
+    if (CmdProlog(as, &cell, &realm, &fname, NULL) != 0) {
+	return -1;
+    }
+
+    afscp_AnonymousAuth(1);
+    if (clear) {
+	afscp_Insecure();
+    }
+
+    if (realm != NULL) {
+	afscp_SetDefaultRealm(realm);
+    }
+
+    if (cell != NULL) {
+	afscp_SetDefaultCell(cell);
+    }
+
+    for (ti = as->parms[0].items; ti != NULL; ti = ti->next) { /* -dir, -fid */
+	char *dirname, *basename;
+	char buf[MOUNTSTR_MAX + 1];
+	ssize_t bytes;
+	struct afscp_venusfid *avfp, *parentfid;
+	struct afscp_dirstream *parentdir;
+	struct AFSFetchStatus status;
+	afs_int32 code;
+
+	avfp = NULL;
+	parentfid = NULL;
+	dirname = NULL;
+	basename = NULL;
+	parentdir = NULL;
+	code = 0;
+	memset(&status, 0, sizeof(status));
+	memset(&buf, 0, sizeof(buf));
+
+	fname = ti->data;
+	if (useFid) {
+	    code = GetVenusFidByFid(fname, cell, 0, &avfp);
+	    if (code != 0) {
+		afs_com_err(pnp, code, "(file not found: %s)", fname);
+		worstcode = code;
+		goto cleanup;
+	    }
+	} else {
+	    code = GetParentFid(fname, &parentfid, &basename, &dirname);
+	    if (code != 0) {
+		afs_com_err(pnp, code,
+			    "(could not resolve parent fid: %s)", fname);
+		worstcode = code;
+		goto cleanup;
+	    }
+
+	    parentdir = afscp_OpenDir(parentfid);
+	    if (parentdir == NULL) {
+		afs_com_err(pnp, afscp_errno,
+			    "(could not open parent directory: %s)", dirname);
+		worstcode = afscp_errno;
+		goto cleanup;
+	    }
+
+	    avfp = afscp_DirLookup(parentdir, basename);
+	    if (avfp == NULL) {
+		afs_com_err(pnp, afscp_errno, "(could not look up mount of name"
+			    " %s from parent directory %s)", basename, dirname);
+		worstcode = afscp_errno;
+		goto cleanup;
+	    }
+	}
+
+	code = afscp_GetStatus(avfp, &status);
+	if (code != 0) {
+	    afs_com_err(pnp, afscp_errno, "(could not get status: %s)", fname);
+	    worstcode = afscp_errno;
+	    goto cleanup;
+	}
+	if (status.FileType != SymbolicLink ||
+	    (status.UnixModeBits & 0111) != 0) {
+	    code = EINVAL;
+	    afs_com_err(pnp, code, "(is not a valid mount point: %s)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+	if (status.Length_hi != 0 || status.Length > 1024) {
+	    code = EINVAL;
+	    afs_com_err(pnp, code, "(mount point too large: %s)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+
+	bytes = afscp_PRead(avfp, buf, status.Length, 0);
+	if (bytes < 0) {
+	    afs_com_err(pnp, afscp_errno, "(failed to read mount point: %s)",
+			fname);
+	    worstcode = afscp_errno;
+	    goto cleanup;
+	}
+	if (bytes != status.Length) {
+	    code = EIO;
+	    afs_com_err(pnp, code, "(short read on mount point: %s)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+	if (buf[0] != '#' && buf[0] != '%') {
+	    code = EINVAL;
+	    afs_com_err(pnp, code, "(is not a valid mount point: %s)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+	buf[status.Length] = '\0';
+
+	if (status.Length > 0 && buf[status.Length - 1] == '.') {
+	    buf[status.Length - 1] = '\0';
+	}
+	printf("'%s' is a mount point for volume '%s'\n", fname, buf);
+
+ cleanup:
+	afscp_CloseDir(parentdir);
+	free(dirname);
+	free(basename);
+	afscp_FreeFid(avfp);
+	afscp_FreeFid(parentfid);
+    }
+
+    return worstcode;
+} /* listMount */
