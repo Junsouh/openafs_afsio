@@ -1,0 +1,159 @@
+=head1 NAME
+
+afsio_mkmount - Creates a mount point for a volume
+
+=head1 SYNOPSIS
+
+=for html
+<div class="synopsis">
+
+B<afsio mkmount> S<<< B<-dir> <I<AFS-dirname>> >>>
+    S<<< B<-vol> <I<volume name>> >>>
+    S<<< [B<-mountcell> <I<foreign cell name>>] >>> [B<-rw>] [B<-fast>]
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-realm> <I<realm name>>] >>>
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+=for html
+</div>
+
+=head1 DESCRIPTION
+
+The B<afsio mkmount> command creates a mount point for the volume named by
+the B<-vol> argument at the location in the AFS file space specified by
+the B<-dir> argument. The mount point looks like a standard directory
+element, and serves as the volume's root directory, but is actually a
+special file system object that refers to an AFS volume. When the Cache
+Manager first encounters a given mount point during pathname traversal, it
+contacts the VL Server to learn which file server machines house the
+indicated volume, then fetches a copy of the volume's root directory from
+the appropriate file server machine.
+
+It is possible, although not recommended, to create more than one mount
+point to a volume. The Cache Manager can become confused if a volume is
+mounted in two places along the same path through the filespace.
+
+The B<fs mkmount> reference page explains basic rules followed by the Cache
+Manager when traversing mount points, as well as how the Cache Manager
+interprets the three types of mount points (I<regular>, I<read/write>,
+I<cellular>).
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-dir> <I<AFS-dirname>>
+
+Names the directory to create as a mount point. The directory must not
+already exist. A path not beginning with F</afs> is interpreted relative to the
+cell's F<root.cell>. A path beginning with F</> but not F</afs> is invalid.
+
+Specify the read/write path to the directory, to avoid the failure that
+results from attempting to create a new mount point in a read-only
+volume. By convention, the read/write path is indicated by placing a
+period before the cell name at the pathname's second level (for example,
+F</afs/.example.com>).
+
+=item B<-vol> <I<volume name>>
+
+Specifies the name or volume ID number of the volume to mount. If
+appropriate, add the C<.readonly> or C<.backup> extension to the name, or
+specify the appropriate volume ID number.
+
+=item B<-mountcell> <I<foreign cell name>>
+
+Names the cell in which the volume resides (creates a cellular mount
+point). Provide the fully qualified domain name, or a shortened form that
+disambiguates it from the other cells listed in the local
+F<{{ viceetcdir }}/CellServDB> file.
+
+If this argument is omitted, no cell indicator appears in the mount
+point. When the Cache Manager interprets it, it assumes that the volume
+named in the mount point resides in the same cell as the volume that
+houses the mount point.
+
+=item B<-rw>
+
+Creates a read/write mount point. Omit this flag to create a regular mount
+point.
+
+=item B<-fast>
+
+Prevents the Volume Location (VL) Server from checking that the volume has
+a VLDB entry and printing a warning message if it does not. Whether or not
+this flag is included, the File Server creates the mount point even when
+the volume has no VLDB entry.
+
+=item B<-cell> <I<cell name>>
+
+Specifies the AFS cell to operate in.
+
+=item B<-realm> <I<realm name>>
+
+Specifies the Kerberos realm to use for authentication.
+
+=item B<-verbose>
+
+Has no effect for B<afsio mkmount>.
+
+=item B<-clear>
+
+Uses unencrypted (cleartext) connections to file servers.
+
+=item B<-crypt>
+
+Uses encrypted connections to file servers.
+
+=item B<-as-user> <I<username>>
+
+Uses localauth credentials to pretend to be the given user, allowing
+authenticated RXAFS operations without a running kernel client.
+
+=item B<-help>
+
+Prints the online help for this command. All other valid options are
+ignored.
+
+=back
+
+=head1 EXAMPLES
+
+The following command creates a regular mount point, mounting the volume
+C<user.smith> at F</afs/example.com/usr/smith>:
+
+   % afsio mkmount -dir /afs/example.com/usr/smith -vol user.smith
+
+The following commands create a read/write mount point and a regular mount
+point for the Example Corporation cell's C<root.cell> volume in that cell's
+file tree. The second command follows the convention of putting a period
+at the beginning of the read/write mount point's name.
+
+   % afsio mkmount -dir /afs/example.com -vol root.cell
+   % afsio mkmount -dir /afs/.example.com -vol root.cell -rw
+
+The following command mounts the Example Organization cell's C<root.cell>
+volume in the Example Corporation cell's file tree, creating a regular
+cellular mount point called F</afs/example.org>. When a Example Corporation
+Cache Manager encounters this mount point, it crosses into the Example
+Organization cell on a read-only path.
+
+   % afsio mkmount -dir /afs/example.org -vol root.cell -mountcell example.org
+
+=head1 PRIVILEGE REQUIRED
+
+The issuer must have the C<i> (insert) and C<a> (administer) permissions
+on the ACL of the directory that is to house the mount point.
+
+=head1 SEE ALSO
+
+L<afsio_lsmount(1)>,
+L<afsio_rmmount(1)>,
+L<fs_mkmount(1)>
+
+=head1 COPYRIGHT
+
+Copyright 2026 Junsouh Hong <junsouh@gmail.com>
+
+This documentation is covered by the BSD License as written in the
+F<LICENSE> file. This man page was written by Junsouh Hong for OpenAFS.

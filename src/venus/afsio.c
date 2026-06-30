@@ -75,6 +75,7 @@ static int writeFile(struct cmd_syndesc *, void *);
 static int listAcl(struct cmd_syndesc *, void *);
 static int setAcl(struct cmd_syndesc *, void *);
 static int listMount(struct cmd_syndesc *, void *);
+static int makeMount(struct cmd_syndesc *, void *);
 static void printDatarate(void);
 static void summarizeDatarate(struct timeval *, const char *);
 static int CmdProlog(struct cmd_syndesc *, char **, char **,
@@ -485,6 +486,16 @@ main(int argc, char **argv)
 			  "list the ACL of a directory from AFS");
     cmd_AddParm(ts, "-fid", CMD_LIST, CMD_REQUIRED,
 		"volume.vnode.uniquifier");;
+    common_parms(ts);
+
+    ts = cmd_CreateSyntax("mkmount", makeMount, NULL, 0,
+			  "make a mount point to a volume");
+    cmd_AddParm(ts, "-dir", CMD_SINGLE, CMD_REQUIRED, "AFS-dirname");
+    cmd_AddParm(ts, "-vol", CMD_SINGLE, CMD_REQUIRED, "volume name");
+    cmd_AddParm(ts, "-mountcell", CMD_SINGLE, CMD_OPTIONAL,
+		"cell name for foreign cell mount");
+    cmd_AddParm(ts, "-rw", CMD_FLAG, CMD_OPTIONAL, "force r/w volume");
+    cmd_AddParm(ts, "-fast", CMD_FLAG, CMD_OPTIONAL, "skip volume check");
     common_parms(ts);
 
     if (afscp_Init(NULL) != 0)
@@ -1774,3 +1785,135 @@ listMount(struct cmd_syndesc *as, void *unused)
 
     return worstcode;
 } /* listMount */
+
+static int
+makeMount(struct cmd_syndesc *as, void *unused)
+{
+    char *fname = NULL;
+    char *cell = NULL;
+    char *realm = NULL;
+    char *dirname = NULL, *basename = NULL;
+    char *cellname = NULL, *volname = NULL;
+    char *tmpname;
+    char buf[MOUNTSTR_MAX + 1];
+    afs_int32 code = 0, rwflag;
+    struct afscp_venusfid *parentfid = NULL;
+    struct AFSStoreStatus status;
+
+    if (CmdProlog(as, &cell, &realm, &fname, NULL) != 0) {
+	return -1;
+    }
+
+    afscp_AnonymousAuth(1);
+    if (clear) {
+	afscp_Insecure();
+    }
+
+    if (realm != NULL) {
+	afscp_SetDefaultRealm(realm);
+    }
+
+    if (cell != NULL) {
+	afscp_SetDefaultCell(cell);
+    }
+
+    volname = as->parms[1].items->data; /* -vol */
+    if (strlen(volname) >= 64) {
+	code = EINVAL;
+	afs_com_err(pnp, code,
+		    "(volume name too long, must be less than 64 chars: %s)",
+		    volname);
+	goto cleanup;
+    }
+
+    if (as->parms[2].items != NULL) { /* -mountcell */
+	cellname = as->parms[2].items->data;
+    }
+    rwflag = (as->parms[3].items != NULL); /* -rw */
+
+    code = GetParentFid(fname, &parentfid, &basename, &dirname);
+    if (code != 0) {
+	afs_com_err(pnp, code,
+		    "(could not resolve parent fid: %s)", fname);
+	goto cleanup;
+    }
+
+    tmpname = strchr(volname, ':');
+    if (tmpname != NULL && cellname != NULL) {
+	size_t cellsize;
+
+	cellsize = tmpname - volname;
+	if (strlen(cellname) != cellsize ||
+	    strncmp(volname, cellname, cellsize) != 0) {
+	    code = EINVAL;
+	    afs_com_err(pnp, code, "(inconsistent cellnames given)");
+	    goto cleanup;
+	} else {
+	    volname = tmpname + 1;
+	}
+    }
+
+    if (as->parms[4].items == NULL) { /* -fast not provided */
+	struct afscp_cell *tcell;
+	struct afscp_volume *tvol;
+
+	if (cellname == NULL) {
+	    tcell = afscp_DefaultCell();
+	} else {
+	    tcell = afscp_CellByName(cellname, NULL);
+	}
+
+	/*
+	 * Mirroring fs, only complain when we confirm the volume does not
+	 * exist, i.e. we successfully obtained the cell and queried for the
+	 * volume and we saw it did not exist
+	 */
+	if (tcell != NULL) {
+	    tvol = afscp_VolumeByName(tcell, volname, rwflag ? RWVOL : ROVOL);
+	    if (tvol == NULL) {
+		code = EINVAL;
+		afs_com_err(pnp, code,
+			    "(warning, volume %s does not exist in cell %s)",
+			    volname, tcell->name);
+	    }
+	}
+    }
+
+    if (cellname == NULL) {
+	code = snprintf(buf, sizeof(buf), "%s%s.", rwflag ? "%" : "#", volname);
+    } else {
+	code = snprintf(buf, sizeof(buf), "%s%s:%s.", rwflag ? "%" : "#",
+			cellname, volname);
+    }
+
+    if (code < 0 || (size_t)code >= sizeof(buf)) {
+	code = EINVAL;
+	afs_com_err(pnp, code, "(could not assemble mount point string: %s)",
+		    fname);
+	goto cleanup;
+    }
+
+    memset(&status, 0, sizeof(status));
+    status.UnixModeBits = 0644;
+    status.ClientModTime = time(NULL);
+    status.Mask = AFS_SETMODE | AFS_SETMODTIME;
+
+    code = afscp_Symlink(parentfid, basename, buf, &status);
+    if (code != 0) {
+	code = afscp_errno;
+	afs_com_err(pnp, afscp_errno,
+		    "(could not create mount point %s in directory %lu.%lu.%lu)",
+		    basename,
+		    afs_printable_uint32_lu(parentfid->fid.Volume),
+		    afs_printable_uint32_lu(parentfid->fid.Vnode),
+		    afs_printable_uint32_lu(parentfid->fid.Unique));
+	goto cleanup;
+    }
+
+ cleanup:
+    free(dirname);
+    free(basename);
+    afscp_FreeFid(parentfid);
+
+    return code;
+} /* makeMount */
