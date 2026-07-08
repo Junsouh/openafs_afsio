@@ -1,0 +1,87 @@
+=head1 NAME
+
+afsio_rmfile - Delete files from AFS
+
+=head1 SYNOPSIS
+
+=for html
+<div class="synopsis">
+
+B<afsio rmfile> S<<< B<-file> <I<AFS-filename>> >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-realm> <I<realm name>>] >>>
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+=for html
+</div>
+
+=head1 DESCRIPTION
+
+The B<afsio rmfile> command removes the file named by the B<-file> argument
+from the file system.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-file> <I<AFS-filename>>
+
+Names the file to delete from the file system. A path not beginning with F</afs>
+is interpreted relative to the cell's F<root.cell>. A path beginning with F</>
+but not F</afs> is invalid.
+
+=item B<-cell> <I<cell name>>
+
+Specifies the AFS cell to operate in.
+
+=item B<-realm> <I<realm name>>
+
+Specifies the Kerberos realm to use for authentication.
+
+=item B<-verbose>
+
+Has no effect for B<afsio rmfile>.
+
+=item B<-clear>
+
+Uses unencrypted (cleartext) connections to file servers.
+
+=item B<-crypt>
+
+Uses encrypted connections to file servers.
+
+=item B<-as-user> <I<username>>
+
+Uses localauth credentials to pretend to be the given user, allowing
+authenticated RXAFS operations without a running kernel client.
+
+=item B<-help>
+
+Prints the online help for this command. All other valid options are
+ignored.
+
+=back
+
+=head1 EXAMPLES
+
+The following command deletes the files example.txt and hello.txt from the cell
+root:
+
+   % afsio rmfile -file example.txt hello.txt
+
+=head1 PRIVILEGE REQUIRED
+
+The issuer must have the C<d> (delete) permission on the ACL of the directory
+that contains the files to delete.
+
+=head1 SEE ALSO
+
+L<afsio(1)>
+
+=head1 COPYRIGHT
+
+Copyright 2026 Junsouh Hong <junsouh@gmail.com>
+
+This documentation is covered by the BSD License as written in the
+F<LICENSE> file. This man page was written by Junsouh Hong for OpenAFS.

@@ -26,6 +26,7 @@ MAN_PAGES = \
   man1/afsio_mkmount.1 \
   man1/afsio_unlock.1 \
   man1/afsio_read.1 \
+  man1/afsio_rmfile.1 \
   man1/afsio_setacl.1 \
   man1/afsio_write.1\
   man1/afsmonitor.1 \

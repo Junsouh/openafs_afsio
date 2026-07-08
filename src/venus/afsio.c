@@ -72,6 +72,7 @@ pthread_key_t uclient_key;
 static int lockFile(struct cmd_syndesc *, void *);
 static int readFile(struct cmd_syndesc *, void *);
 static int writeFile(struct cmd_syndesc *, void *);
+static int removeFile(struct cmd_syndesc *, void *);
 static int listAcl(struct cmd_syndesc *, void *);
 static int setAcl(struct cmd_syndesc *, void *);
 static int listMount(struct cmd_syndesc *, void *);
@@ -446,6 +447,11 @@ main(int argc, char **argv)
     cmd_Seek(ts, 5);
     cmd_AddParm(ts, "-synthesize", CMD_SINGLE, CMD_OPTIONAL,
 		"create data pattern of specified length instead reading from stdin");
+    common_parms(ts);
+
+    ts = cmd_CreateSyntax("rmfile", removeFile, NULL, 0,
+			  "delete a file from AFS");
+    cmd_AddParm(ts, "-file", CMD_SINGLE, CMD_REQUIRED, "AFS-filename");
     common_parms(ts);
 
     ts = cmd_CreateSyntax("listacl", listAcl, NULL, 0,
@@ -1416,6 +1422,66 @@ cleanup:
     afscp_FreeFid(dirvfp);
     return code;
 } /* writeFile */
+
+static int
+removeFile(struct cmd_syndesc *as, void *unused)
+{
+    char *fname = NULL;
+    char *cell = NULL;
+    char *realm = NULL;
+    afs_int32 worstcode = 0;
+    struct cmd_item *ti;
+
+    if (CmdProlog(as, &cell, &realm, &fname, NULL) != 0) {
+	return -1;
+    }
+
+    afscp_AnonymousAuth(1);
+    if (clear) {
+	afscp_Insecure();
+    }
+
+    if (realm != NULL) {
+	afscp_SetDefaultRealm(realm);
+    }
+
+    if (cell != NULL) {
+	afscp_SetDefaultCell(cell);
+    }
+
+    for (ti = as->parms[0].items; ti != NULL; ti = ti->next) { /* -file */
+	char *dirname, *basename;
+	struct afscp_venusfid *parentfid = NULL;
+	afs_int32 code = 0;
+
+	parentfid = NULL;
+	dirname = NULL;
+	basename = NULL;
+
+	fname = ti->data;
+	code = GetParentFid(fname, &parentfid, &basename, &dirname);
+	if (code != 0) {
+	    afs_com_err(pnp, code,
+			"(could not resolve parent fid: %s)", fname);
+	    worstcode = code;
+	    goto cleanup;
+	}
+
+	code = afscp_RemoveFile(parentfid, basename);
+	if (code != 0) {
+	    afs_com_err(pnp, afscp_errno,
+			"(could not remove file: %s)", fname);
+	    worstcode = afscp_errno;
+	    goto cleanup;
+	}
+
+ cleanup:
+	free(dirname);
+	free(basename);
+	afscp_FreeFid(parentfid);
+    }
+    return worstcode;
+} /* removeFile */
 
 static int
 listAcl(struct cmd_syndesc *as, void *unused)
