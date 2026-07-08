@@ -38,6 +38,7 @@ dest: man
 	    $(LN) -fs afsio_read.1 $(DEST)/man/man1/afsio_fidread.1 ; \
 	    $(LN) -fs afsio_read.1 $(DEST)/man/man1/afsio_readdir.1 ; \
 	    $(LN) -fs afsio_read.1 $(DEST)/man/man1/afsio_fidreaddir.1 ; \
+	    $(LN) -fs afsio_rmfile.1 $(DEST)/man/man1/afsio_rmdir.1 ; \
 	    $(LN) -fs afsio_setacl.1 $(DEST)/man/man1/afsio_fidsetacl.1 ; \
 	    $(LN) -fs afsio_unlock.1 $(DEST)/man/man1/afsio_fidunlock.1 ; \
 	    $(LN) -fs afsio_write.1 $(DEST)/man/man1/afsio_fidwrite.1 ; \

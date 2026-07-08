@@ -1,6 +1,6 @@
 =head1 NAME
 
-afsio_rmfile - Delete files from AFS
+afsio_rmfile, afsio_rmdir - Delete files and empty directories from AFS
 
 =head1 SYNOPSIS
 
@@ -8,6 +8,12 @@ afsio_rmfile - Delete files from AFS
 <div class="synopsis">
 
 B<afsio rmfile> S<<< B<-file> <I<AFS-filename>> >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-realm> <I<realm name>>] >>>
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
+B<afsio rmdir> S<<< B<-dir> <I<AFS-dirname>> >>>
     S<<< [B<-cell> <I<cellname>>] >>>
     [B<-verbose>] [B<-clear>] [B<-crypt>]
     S<<< [B<-realm> <I<realm name>>] >>>
@@ -21,6 +27,10 @@ B<afsio rmfile> S<<< B<-file> <I<AFS-filename>> >>>
 The B<afsio rmfile> command removes the file named by the B<-file> argument
 from the file system.
 
+The B<afsio rmdir> command removes the empty directory named by the B<-dir>
+argument from the file system. Non-empty directories cannot be removed by
+B<afsio rmdir>.
+
 =head1 OPTIONS
 
 =over 4
@@ -29,7 +39,13 @@ from the file system.
 
 Names the file to delete from the file system. A path not beginning with F</afs>
 is interpreted relative to the cell's F<root.cell>. A path beginning with F</>
-but not F</afs> is invalid.
+but not F</afs> is invalid. This option is used by B<afsio rmfile>.
+
+=item B<-dir> <I<AFS-dirname>>
+
+Names the directory to delete from the file system. A path not beginning with
+F</afs> is interpreted relative to the cell's F<root.cell>. A path beginning
+with F</> but not F</afs> is invalid. This option is used by B<afsio rmdir>.
 
 =item B<-cell> <I<cell name>>
 
@@ -70,10 +86,14 @@ root:
 
    % afsio rmfile -file example.txt hello.txt
 
+The following command deletes the empty directory test from the cell root:
+
+   % afsio rmdir -dir test
+
 =head1 PRIVILEGE REQUIRED
 
 The issuer must have the C<d> (delete) permission on the ACL of the directory
-that contains the files to delete.
+that contains the files or directories to delete.
 
 =head1 SEE ALSO
 

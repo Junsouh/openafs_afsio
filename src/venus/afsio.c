@@ -96,6 +96,7 @@ static int waitseconds = 0;	/* Set if -waitseconds option given */
 static int useFid = 0;		/* Set if fidwrite/fidread/fidappend invoked */
 static int append = 0;		/* Set if append/fidappend invoked */
 static int readDir = 0;		/* Set if readdir/fidreaddir invoked. */
+static int removeDir = 0;	/* Set if rmdir invoked */
 static struct timeval starttime, opentime, readtime, writetime;
 static afs_uint64 xfered = 0;
 static struct timeval now;
@@ -262,6 +263,9 @@ CmdProlog(struct cmd_syndesc *as, char **cellp, char **realmp,
     if (strcmp(as->name, "readdir") == 0 ||
         strcmp(as->name, "fidreaddir") == 0)
         readDir = 1;
+    if (strcmp(as->name, "rmdir") == 0) {
+	removeDir = 1;
+    }
 
     /* attempts to ensure loop is bounded: */
     for (pdp = as->parms, i = 0; pdp && (i < as->nParms); i++, pdp++) {
@@ -452,6 +456,11 @@ main(int argc, char **argv)
     ts = cmd_CreateSyntax("rmfile", removeFile, NULL, 0,
 			  "delete a file from AFS");
     cmd_AddParm(ts, "-file", CMD_SINGLE, CMD_REQUIRED, "AFS-filename");
+    common_parms(ts);
+
+    ts = cmd_CreateSyntax("rmdir", removeFile, NULL, 0,
+			  "delete an empty directory from AFS");
+    cmd_AddParm(ts, "-dir", CMD_SINGLE, CMD_REQUIRED, "AFS-dirname");
     common_parms(ts);
 
     ts = cmd_CreateSyntax("listacl", listAcl, NULL, 0,
@@ -1449,8 +1458,8 @@ removeFile(struct cmd_syndesc *as, void *unused)
 	afscp_SetDefaultCell(cell);
     }
 
-    for (ti = as->parms[0].items; ti != NULL; ti = ti->next) { /* -file */
-	char *dirname, *basename;
+    for (ti = as->parms[0].items; ti != NULL; ti = ti->next) { /* -file, -dir */
+	char *dirname, *basename, *ftype;
 	struct afscp_venusfid *parentfid = NULL;
 	afs_int32 code = 0;
 
@@ -1467,10 +1476,15 @@ removeFile(struct cmd_syndesc *as, void *unused)
 	    goto cleanup;
 	}
 
-	code = afscp_RemoveFile(parentfid, basename);
+	if (removeDir) {
+	    code = afscp_RemoveDir(parentfid, basename);
+	} else {
+	    code = afscp_RemoveFile(parentfid, basename);
+	}
 	if (code != 0) {
-	    afs_com_err(pnp, afscp_errno,
-			"(could not remove file: %s)", fname);
+	    ftype = removeDir ? "directory" : "file";
+	    afs_com_err(pnp, afscp_errno, "(could not remove %s: %s)",
+			ftype, fname);
 	    worstcode = afscp_errno;
 	    goto cleanup;
 	}
