@@ -85,7 +85,7 @@ static int clear = 0;		/* Set if -clear option given,
 static int cellGiven = 0;	/* Set if -cell option given */
 static int force = 0;		/* Set if -force option given */
 static int readlock = 0;	/* Set if -readlock option given */
-static int waittime = 0;	/* Set if -waittime option given */
+static int waitseconds = 0;	/* Set if -waitseconds option given */
 static int useFid = 0;		/* Set if fidwrite/fidread/fidappend invoked */
 static int append = 0;		/* Set if append/fidappend invoked */
 static int readDir = 0;		/* Set if readdir/fidreaddir invoked. */
@@ -270,8 +270,8 @@ CmdProlog(struct cmd_syndesc *as, char **cellp, char **realmp,
 		*slp = pdp->items->data;
             else if (strcmp(pdp->name, "-realm") == 0)
 		*realmp = pdp->items->data;
-            else if (strcmp(pdp->name, "-wait") == 0)
-		waittime = atoi(pdp->items->data);
+	    else if (strcmp(pdp->name, "-waitseconds") == 0)
+		waitseconds = atoi(pdp->items->data);
             else if (strcmp(pdp->name, "-readlock") == 0)
 		readlock = 1;
 	    else if (strcmp(pdp->name, "-as-user") == 0) {
@@ -779,7 +779,7 @@ retry:
 
     if (locktype != LockRelease) {
 	while (OutStatus.lockCount != 0) {
-	    code = afscp_WaitForCallback(avfp, waittime);
+	    code = afscp_WaitForCallback(avfp, waitseconds);
 	    if ((code == -1) && (afscp_errno == ETIMEDOUT))
 		break;
 	    if ((code = afscp_GetStatus(avfp, &OutStatus)) != 0)
