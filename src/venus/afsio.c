@@ -97,6 +97,7 @@ static int useFid = 0;		/* Set if fidwrite/fidread/fidappend invoked */
 static int append = 0;		/* Set if append/fidappend invoked */
 static int readDir = 0;		/* Set if readdir/fidreaddir invoked. */
 static int removeDir = 0;	/* Set if rmdir invoked */
+static int removeMount = 0;	/* Set if rmmount invoked */
 static struct timeval starttime, opentime, readtime, writetime;
 static afs_uint64 xfered = 0;
 static struct timeval now;
@@ -265,7 +266,10 @@ CmdProlog(struct cmd_syndesc *as, char **cellp, char **realmp,
         readDir = 1;
     if (strcmp(as->name, "rmdir") == 0) {
 	removeDir = 1;
+    } else if (strcmp(as->name, "rmmount") == 0) {
+	removeMount = 1;
     }
+
 
     /* attempts to ensure loop is bounded: */
     for (pdp = as->parms, i = 0; pdp && (i < as->nParms); i++, pdp++) {
@@ -461,6 +465,11 @@ main(int argc, char **argv)
     ts = cmd_CreateSyntax("rmdir", removeFile, NULL, 0,
 			  "delete an empty directory from AFS");
     cmd_AddParm(ts, "-dir", CMD_SINGLE, CMD_REQUIRED, "AFS-dirname");
+    common_parms(ts);
+
+    ts = cmd_CreateSyntax("rmmount", removeFile, NULL, 0,
+			  "delete a mount point from AFS");
+    cmd_AddParm(ts, "-mount", CMD_SINGLE, CMD_REQUIRED, "AFS-mountname");
     common_parms(ts);
 
     ts = cmd_CreateSyntax("listacl", listAcl, NULL, 0,
@@ -1458,14 +1467,19 @@ removeFile(struct cmd_syndesc *as, void *unused)
 	afscp_SetDefaultCell(cell);
     }
 
-    for (ti = as->parms[0].items; ti != NULL; ti = ti->next) { /* -file, -dir */
+    for (ti = as->parms[0].items; ti != NULL;
+	 ti = ti->next) { /* -file, -dir, -mount */
 	char *dirname, *basename, *ftype;
-	struct afscp_venusfid *parentfid = NULL;
+	struct afscp_venusfid *parentfid, *avfp;
+	struct afscp_dirstream *parentdir;
+	struct AFSFetchStatus status;
 	afs_int32 code = 0;
 
 	parentfid = NULL;
 	dirname = NULL;
 	basename = NULL;
+	avfp = NULL;
+	parentdir = NULL;
 
 	fname = ti->data;
 	code = GetParentFid(fname, &parentfid, &basename, &dirname);
@@ -1476,13 +1490,48 @@ removeFile(struct cmd_syndesc *as, void *unused)
 	    goto cleanup;
 	}
 
+	if (removeMount) {
+	    parentdir = afscp_OpenDir(parentfid);
+	    if (parentdir == NULL) {
+		afs_com_err(pnp, afscp_errno,
+			    "(could not open parent directory: %s)", dirname);
+		worstcode = afscp_errno;
+		goto cleanup;
+	    }
+
+	    avfp = afscp_DirLookup(parentdir, basename);
+	    if (avfp == NULL) {
+		afs_com_err(pnp, afscp_errno, "(could not look up mount of name"
+			    " %s from parent directory %s)", basename, dirname);
+		worstcode = afscp_errno;
+		goto cleanup;
+	    }
+
+	    code = afscp_GetStatus(avfp, &status);
+	    if (code != 0) {
+		afs_com_err(pnp, afscp_errno, "(could not get status: %s)",
+			    fname);
+		worstcode = afscp_errno;
+		goto cleanup;
+	    }
+	    if (status.FileType != SymbolicLink ||
+		(status.UnixModeBits & 0111) != 0) {
+		code = EINVAL;
+		afs_com_err(pnp, code, "(is not a valid mount point: %s)",
+			    fname);
+		worstcode = code;
+		goto cleanup;
+	    }
+	}
+
 	if (removeDir) {
 	    code = afscp_RemoveDir(parentfid, basename);
 	} else {
 	    code = afscp_RemoveFile(parentfid, basename);
 	}
 	if (code != 0) {
-	    ftype = removeDir ? "directory" : "file";
+	    ftype = removeDir ? "directory" :
+		    (removeMount ? "mount point" : "file");
 	    afs_com_err(pnp, afscp_errno, "(could not remove %s: %s)",
 			ftype, fname);
 	    worstcode = afscp_errno;
@@ -1490,8 +1539,10 @@ removeFile(struct cmd_syndesc *as, void *unused)
 	}
 
  cleanup:
+	afscp_CloseDir(parentdir);
 	free(dirname);
 	free(basename);
+	afscp_FreeFid(avfp);
 	afscp_FreeFid(parentfid);
     }
     return worstcode;

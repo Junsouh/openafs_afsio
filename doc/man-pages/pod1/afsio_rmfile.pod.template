@@ -1,6 +1,7 @@
 =head1 NAME
 
-afsio_rmfile, afsio_rmdir - Delete files and empty directories from AFS
+afsio_rmfile, afsio_rmdir, afsio_rmmount - Delete files, empty directories, and
+mount points from AFS
 
 =head1 SYNOPSIS
 
@@ -19,6 +20,12 @@ B<afsio rmdir> S<<< B<-dir> <I<AFS-dirname>> >>>
     S<<< [B<-realm> <I<realm name>>] >>>
     S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
 
+B<afsio rmmount> S<<< B<-mount> <I<AFS-mountname>> >>>
+    S<<< [B<-cell> <I<cellname>>] >>>
+    [B<-verbose>] [B<-clear>] [B<-crypt>]
+    S<<< [B<-realm> <I<realm name>>] >>>
+    S<<< [B<-as-user> <I<username>>] >>>  [B<-help>]
+
 =for html
 </div>
 
@@ -30,6 +37,10 @@ from the file system.
 The B<afsio rmdir> command removes the empty directory named by the B<-dir>
 argument from the file system. Non-empty directories cannot be removed by
 B<afsio rmdir>.
+
+The B<afsio rmmount> command removes the mount point named by the B<-mount>
+argument from the file system. This must be a valid mount point, the command
+will fail if it is not.
 
 =head1 OPTIONS
 
@@ -46,6 +57,15 @@ but not F</afs> is invalid. This option is used by B<afsio rmfile>.
 Names the directory to delete from the file system. A path not beginning with
 F</afs> is interpreted relative to the cell's F<root.cell>. A path beginning
 with F</> but not F</afs> is invalid. This option is used by B<afsio rmdir>.
+
+=item B<-mount> <I<AFS-mountname>>
+
+Names the mount to delete from the file system. A path not beginning with
+F</afs> is interpreted relative to the cell's F<root.cell>. A path beginning
+with F</> but not F</afs> is invalid. This option is used by B<afsio rmmount>.
+
+If the given path does not correspond to a valid mount point, this option will
+fail.
 
 =item B<-cell> <I<cell name>>
 
@@ -90,10 +110,14 @@ The following command deletes the empty directory test from the cell root:
 
    % afsio rmdir -dir test
 
+The following command deletes the mount /afs/example.com/test:
+
+   % afsio rmmount -mount /afs/example.com/test
+
 =head1 PRIVILEGE REQUIRED
 
 The issuer must have the C<d> (delete) permission on the ACL of the directory
-that contains the files or directories to delete.
+that contains the files, directories, or mounts to delete.
 
 =head1 SEE ALSO
 
