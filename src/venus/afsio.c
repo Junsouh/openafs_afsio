@@ -82,7 +82,6 @@ static char pnp[AFSPATHMAX];	/* filename of this program when called */
 static int verbose = 0;		/* Set if -verbose option given */
 static int clear = 0;		/* Set if -clear option given,
 				   Unset if -crypt given; default is -crypt */
-static int cellGiven = 0;	/* Set if -cell option given */
 static int force = 0;		/* Set if -force option given */
 static int readlock = 0;	/* Set if -readlock option given */
 static int waitseconds = 0;	/* Set if -waitseconds option given */
@@ -253,7 +252,6 @@ CmdProlog(struct cmd_syndesc *as, char **cellp, char **realmp,
             else if (strcmp(pdp->name, "-md5") == 0)
 		md5sum = 1;	/* global */
             else if (strcmp(pdp->name, "-cell") == 0) {
-		cellGiven = 1;	/* global */
 		*cellp = pdp->items->data;
             } else if ( strcmp(pdp->name, "-file") == 0 ||
 			strcmp(pdp->name, "-dir") == 0) {
@@ -729,7 +727,6 @@ lockFile(struct cmd_syndesc *as, void *arock)
     afs_int32 code = 0;
     struct AFSFetchStatus OutStatus;
     struct afscp_venusfid *avfp = NULL;
-    char *buf = 0;
     char ipv4_addr[16];
     int locktype = (int)(intptr_t) arock;
 
@@ -737,8 +734,6 @@ lockFile(struct cmd_syndesc *as, void *arock)
     /* stdout on Windows defaults to _O_TEXT mode */
     _setmode(1, _O_BINARY);
 #endif
-
-    gettimeofday(&starttime, &Timezone);
 
     if (CmdProlog(as, &cell, &realm, &fname, NULL) != 0) {
 	return -1;
@@ -797,9 +792,6 @@ retry:
 	    goto retry;
     }
     afscp_FreeFid(avfp);
-
-    if (buf != NULL)
-	free(buf);
 
     if (code != 0)
 	afs_com_err(pnp, afscp_errno, "(failed to change lock status: %d)", afscp_errno);
