@@ -131,6 +131,7 @@ struct aclu_Acl {
     struct aclu_AclEntry *minuslist;
 };
 
+extern int aclu_ParseAcl(const char *astr, struct aclu_Acl **a_acl);
 extern void aclu_FreeAcl(struct aclu_Acl **a_acl);
 
 #endif
