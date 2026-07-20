@@ -453,44 +453,6 @@ QuickPrintSpace(VolumeStatus * status, char *name, int human)
     return 0;
 }
 
-struct aclu_aclbuf {
-    char sbuf[AFS_PIOCTL_MAXSIZE + 24];
-};
-
-/**
- * Converts an Acl data structure into a string.
- *
- * Serializes a user-provided Acl struct into a string. May be used for storing
- * or displaying ACLs.
- *
- * @param[in]   acl the Acl struct to be converted
- * @param[out]  buf the buffer to output the string to
- *
- * @return string containing the serialized Acl data
- */
-static char *
-aclu_AclToNetstring(struct aclu_Acl *acl, struct aclu_aclbuf *buf)
-{
-    char tstring[AFS_PIOCTL_MAXSIZE];
-    char dfsstring[AFS_PIOCTL_MAXSIZE];
-    struct aclu_AclEntry *tp;
-
-    if (acl->dfs)
-	snprintf(dfsstring, sizeof(dfsstring), " dfs:%d %s", acl->dfs, acl->cell);
-    else
-	dfsstring[0] = '\0';
-    snprintf(buf->sbuf, sizeof(buf->sbuf), "%d%s\n%d\n", acl->nplus, dfsstring, acl->nminus);
-    for (tp = acl->pluslist; tp; tp = tp->next) {
-	snprintf(tstring, sizeof(tstring), "%s %d\n", tp->name, tp->rights);
-	strlcat(buf->sbuf, tstring, sizeof(buf->sbuf));
-    }
-    for (tp = acl->minuslist; tp; tp = tp->next) {
-	snprintf(tstring, sizeof(tstring), "%s %d\n", tp->name, tp->rights);
-	strlcat(buf->sbuf, tstring, sizeof(buf->sbuf));
-    }
-    return buf->sbuf;
-}
-
 static char *
 AclToString(struct aclu_Acl *acl)
 {
