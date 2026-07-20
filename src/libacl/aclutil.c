@@ -542,3 +542,63 @@ aclu_AclToNetstring(struct aclu_Acl *acl, struct aclu_aclbuf *buf)
     }
     return buf->sbuf;
 }
+
+/**
+ * Filters an ACL based off a filter function
+ *
+ * Enumerates the given ACL struct's list of ACL entries, checking for entries
+ * that trigger the filter function to set the a_remove variable to 1. Each such
+ * entry is removed from the ACL and then freed.
+ *
+ * @param[in,out]  aa       Acl struct to filter
+ * @param[in]      filter   filter function
+ * @param[in]      rock     opaque pointer passed to callback
+ *
+ * @return number of changes made to ACL
+ */
+int
+aclu_FilterAcl(struct aclu_Acl *aa, aclu_filter_func *filter, void *rock)
+{
+    struct aclu_AclEntry *te, **le, *ne;
+    int code;
+
+    /* Don't process DFS ACLs */
+    if (aa->dfs)
+	return 0;
+
+    le = &aa->pluslist;
+    for (te = aa->pluslist; te; te = ne) {
+	int remove = 0;
+	ne = te->next;
+	code = filter(aa, 0, te->name, te->rights, rock, &remove);
+	if (code != 0) {
+	    return code;
+	}
+	if (remove) {
+	    /* zap this dude */
+	    *le = te->next;
+	    aa->nplus--;
+	    free(te);
+	} else {
+	    le = &te->next;
+	}
+    }
+    le = &aa->minuslist;
+    for (te = aa->minuslist; te; te = ne) {
+	int remove = 0;
+	ne = te->next;
+	code = filter(aa, 1, te->name, te->rights, rock, &remove);
+	if (code != 0) {
+	    return code;
+	}
+	if (remove) {
+	    /* zap this dude */
+	    *le = te->next;
+	    aa->nminus--;
+	    free(te);
+	} else {
+	    le = &te->next;
+	}
+    }
+    return 0;
+}

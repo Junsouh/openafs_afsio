@@ -366,13 +366,115 @@ test_AclToNetstring(void)
     }
 }
 
+static int
+TestFilterBadName(struct aclu_Acl *acl, int neg, char *name,
+		  afs_uint32 rights, void *rock, int *a_remove)
+{
+    int *a_changed = rock;
+    char *nm, tc;
+
+    for (nm = name; (tc = *nm); nm++) {
+	/* all must be '-' or digit to be bad */
+	if (tc != '-' && (tc < '0' || tc > '9'))
+	    return 0;
+    }
+
+    /* Assume all numerical names are bad */
+    *a_remove = 1;
+    *a_changed += 1;
+
+    return 0;
+}
+
+static void
+test_CleanAcl(void)
+{
+    int tc_i;
+
+    struct {
+	const char *acl;
+	int code;
+	int n_changes;
+	const char *result;
+
+    } *tc, test_cases[] = {
+	{
+	    "2\n0\nnsystem:administrators 127\nreaders 9\n",
+	    0, 0,
+	    "2\n0\nnsystem:administrators 127\nreaders 9\n",
+	},
+	{
+	    "2\n0\nnsystem:administrators 127\n1234 9\n",
+	    0, 1,
+	    "1\n0\nnsystem:administrators 127\n",
+	},
+	{
+	    "2\n0\nnsystem:administrators 127\n-1234 9\n",
+	    0, 1,
+	    "1\n0\nnsystem:administrators 127\n",
+	},
+	{
+	    "2\n0\n567890 127\n-1234 9\n",
+	    0, 2,
+	    "0\n0\n",
+	},
+	{
+	    "0\n2\nnsystem:administrators 127\nreaders 9\n",
+	    0, 0,
+	    "0\n2\nnsystem:administrators 127\nreaders 9\n",
+	},
+	{
+	    "0\n2\nnsystem:administrators 127\n1234 9\n",
+	    0, 1,
+	    "0\n1\nnsystem:administrators 127\n",
+	},
+	{
+	    "0\n2\nnsystem:administrators 127\n-1234 9\n",
+	    0, 1,
+	    "0\n1\nnsystem:administrators 127\n",
+	},
+	{
+	    "0\n2\n567890 127\n-1234 9\n",
+	    0, 2,
+	    "0\n0\n",
+	},
+    };
+
+    for (afstest_Scan(test_cases, tc, tc_i)) {
+	struct aclu_Acl *acl;
+	struct aclu_aclbuf buf;
+	int changed = 0;
+	int code;
+
+	memset(&acl, 0, sizeof(acl));
+	memset(&buf, 0, sizeof(buf));
+
+	code = aclu_ParseAcl(tc->acl, &acl);
+	opr_Assert(code == 0);
+
+	code = aclu_FilterAcl(acl, TestFilterBadName, &changed);
+	is_int(code, tc->code,
+	       "[%d] aclu_FilterAcl() == %d",
+	       tc_i, tc->code);
+
+	is_int(changed, tc->n_changes,
+	       "... changed == %d", tc->n_changes);
+
+	is_string(aclu_AclToNetstring(acl, &buf), tc->result,
+		  "... filtered acl matches");
+
+	aclu_FreeAcl(&acl);
+    }
+}
+
 int
 main(void)
 {
-    plan(68);
+    plan(92);
 
     test_ParseRights();
     test_StringifyRights();
     test_ParseAcl();
     test_AclToNetstring();
+    test_CleanAcl();
 }

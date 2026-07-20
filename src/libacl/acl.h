@@ -141,4 +141,10 @@ struct aclu_aclbuf {
 
 extern char *aclu_AclToNetstring(struct aclu_Acl *acl, struct aclu_aclbuf *buf);
 
+typedef int (aclu_filter_func)(struct aclu_Acl *acl, int neg,
+			       char *name, afs_uint32 rights, void *rock,
+			       int *a_remove);
+extern int aclu_FilterAcl(struct aclu_Acl *aa, aclu_filter_func *filter,
+			  void *rock);
+
 #endif
