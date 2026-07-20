@@ -302,44 +302,6 @@ PruneList(struct aclu_AclEntry **ae, int dfs)
     return ctr;
 }
 
-/**
- * Creates an empty Acl struct, using an ACL string to obtain DFS information.
- *
- * The only part of the input string that is parsed is the first line, since
- * that is the part containing DFS information, and so that bogus ACLs can be
- * recovered from. See aclu_ParseAcl for information on expected ACL string
- * format.
- *
- * The caller is responsible for freeing the newly created Acl struct by
- * invoking aclu_FreeAcl.
- *
- * @param[in]  astr  ACL string to mimic the DFS status and cell from
- * @param[out] a_acl address of the resulting Acl struct
- *
- * @return status codes
- * @retval 0      success
- * @retval ENOMEM allocation failed, insufficient memory
- */
-static int
-aclu_ParseEmptyAcl(const char *astr, struct aclu_Acl **a_acl)
-{
-    struct aclu_Acl *tp;
-    int junk;
-
-    tp = calloc(sizeof(*tp), 1);
-    if (tp == NULL) {
-	return ENOMEM;
-    }
-
-    tp->nplus = tp->nminus = 0;
-    tp->pluslist = tp->minuslist = 0;
-    tp->dfs = 0;
-    sscanf(astr, "%d dfs:%d %1024s", &junk, &tp->dfs, tp->cell);
-
-    *a_acl = tp;
-    return 0;
-}
-
 static struct aclu_Acl *
 EmptyAcl(const char *astr)
 {

@@ -10,6 +10,7 @@ acl_NtohACL
 aclu_FilterAcl
 aclu_FreeAcl
 aclu_ParseAcl
+aclu_ParseEmptyAcl
 aclu_ParseRights
 aclu_ParseRightsDFS
 aclu_StringifyRights

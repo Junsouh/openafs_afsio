@@ -323,6 +323,39 @@ test_ParseAcl(void)
 }
 
 static void
+test_ParseEmptyAcl(void)
+{
+    int tc_i;
+    struct {
+	const char *str;
+	int code;
+
+    } *tc, test_cases[] = {
+	{ "2\n0\nsystem:administrators 127\nreaders 9\n" },
+	{ "1\n1\nsystem:administrators 127\nbadusers 9\n" },
+	{ "garbage" },
+	{ "" },
+    };
+
+    for (afstest_Scan(test_cases, tc, tc_i)) {
+	struct aclu_Acl *acl = NULL;
+
+	is_int(aclu_ParseEmptyAcl(tc->str, &acl), tc->code,
+	       "[%d] aclu_ParseEmptyAcl() == %d",
+	       tc_i, tc->code);
+	if (tc->code == 0) {
+	    is_int(acl->nplus, 0, "... nplus is 0");
+	    is_pointer(acl->pluslist, NULL, "... pluslist is NULL");
+	    is_int(acl->nminus, 0, "... nminus is 0");
+	    is_pointer(acl->minuslist, NULL, "... minuslist is NULL");
+
+	    is_int(acl->dfs, 0, "... dfs is 0");
+	    is_string(acl->cell, "", "... cell is blank");
+	}
+    }
+}
+
+static void
 test_AclToNetstring(void)
 {
     int tc_i;
@@ -470,11 +503,12 @@ test_CleanAcl(void)
 int
 main(void)
 {
-    plan(92);
+    plan(120);
 
     test_ParseRights();
     test_StringifyRights();
     test_ParseAcl();
+    test_ParseEmptyAcl();
     test_AclToNetstring();
     test_CleanAcl();
 }
