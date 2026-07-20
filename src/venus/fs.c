@@ -697,16 +697,24 @@ GetCell(char *fname, char *cellname)
     return code;
 }
 
+struct cleanacl_data {
+    char *fname;
+    int changed;
+};
+
 /* Check if a username is valid: If it contains only digits (or a
  * negative sign), then it might be bad. We then query the ptserver
  * to see.
  */
 static int
-BadName(char *aname, char *fname)
+FilterBadName(struct aclu_Acl *acl, int neg, char *aname,
+	      afs_uint32 rights, void *rock, int *a_remove)
 {
+    struct cleanacl_data *data = rock;
     afs_int32 tc, code, id;
     char *nm;
     char cell[MAXCELLCHARS];
+    *a_remove = 0;
 
     for (nm = aname; (tc = *nm); nm++) {
 	/* all must be '-' or digit to be bad */
@@ -715,7 +723,7 @@ BadName(char *aname, char *fname)
     }
 
     /* Go to the PRDB and see if this all number username is valid */
-    code = GetCell(fname, cell);
+    code = GetCell(data->fname, cell);
     if (code)
 	return 0;
 
@@ -723,54 +731,98 @@ BadName(char *aname, char *fname)
     code = pr_SNameToId(aname, &id);
     pr_End();
 
-    /* 1=>Not-valid; 0=>Valid */
-    return ((!code && (id == ANONYMOUSID)) ? 1 : 0);
+    if (code == 0 && id == ANONYMOUSID) {
+	/* Not-valid */
+	*a_remove = 1;
+	data->changed++;
+    }
+
+    return 0;
 }
 
+typedef int (aclu_filter_func)(struct aclu_Acl *acl, int neg,
+			       char *name, afs_uint32 rights, void *rock,
+			       int *a_remove);
 
-/* clean up an access control list of its bad entries; return 1 if we made
-   any changes to the list, and 0 otherwise */
+/**
+ * Filters an ACL based off a filter function
+ *
+ * Enumerates the given ACL struct's list of ACL entries, checking for entries
+ * that trigger the filter function to set the a_remove variable to 1. Each such
+ * entry is removed from the ACL and then freed.
+ *
+ * @param[in,out]  aa       Acl struct to filter
+ * @param[in]      filter   filter function
+ * @param[in]      rock     opaque pointer passed to callback
+ *
+ * @return number of changes made to ACL
+ */
 static int
-CleanAcl(struct aclu_Acl *aa, char *fname)
+aclu_FilterAcl(struct aclu_Acl *aa, aclu_filter_func *filter, void *rock)
 {
     struct aclu_AclEntry *te, **le, *ne;
-    int changes;
+    int code;
 
-    /* Don't correct DFS ACL's for now */
+    /* Don't process DFS ACLs */
     if (aa->dfs)
 	return 0;
 
-    /* prune out bad entries */
-    changes = 0;		/* count deleted entries */
     le = &aa->pluslist;
     for (te = aa->pluslist; te; te = ne) {
+	int remove = 0;
 	ne = te->next;
-	if (BadName(te->name, fname)) {
+	code = filter(aa, 0, te->name, te->rights, rock, &remove);
+	if (code != 0) {
+	    return code;
+	}
+	if (remove) {
 	    /* zap this dude */
 	    *le = te->next;
 	    aa->nplus--;
 	    free(te);
-	    changes++;
 	} else {
 	    le = &te->next;
 	}
     }
     le = &aa->minuslist;
     for (te = aa->minuslist; te; te = ne) {
+	int remove = 0;
 	ne = te->next;
-	if (BadName(te->name, fname)) {
+	code = filter(aa, 1, te->name, te->rights, rock, &remove);
+	if (code != 0) {
+	    return code;
+	}
+	if (remove) {
 	    /* zap this dude */
 	    *le = te->next;
 	    aa->nminus--;
 	    free(te);
-	    changes++;
 	} else {
 	    le = &te->next;
 	}
     }
-    return changes;
+    return 0;
 }
 
+/* clean up an access control list of its bad entries; return 1 if we made
+   any changes to the list, and 0 otherwise */
+static int
+CleanAcl(struct aclu_Acl *aa, char *fname)
+{
+    int code;
+    struct cleanacl_data data;
+
+    memset(&data, 0, sizeof(data));
+
+    data.fname = fname;
+
+    code = aclu_FilterAcl(aa, FilterBadName, &data);
+    if (code != 0) {
+	return 0;
+    }
+
+    return data.changed;
+}
 
 /* clean up an acl to not have bogus entries */
 static int
