@@ -63,7 +63,6 @@ static int rxInitDone = 0;
 
 struct aclu_AclEntry;
 struct aclu_Acl;
-static void ZapList(struct aclu_AclEntry *);
 static int PruneList(struct aclu_AclEntry **, int);
 static int CleanAcl(struct aclu_Acl *, char *);
 static int SetVolCmd(struct cmd_syndesc *as, void *arock);
@@ -101,12 +100,35 @@ struct vcxstat2 {
 };
 
 static void
-ZapAcl(struct aclu_Acl *acl)
+FreeEntryList(struct aclu_AclEntry *alist)
 {
-    if (!acl)
+    struct aclu_AclEntry *tp, *np;
+    for (tp = alist; tp; tp = np) {
+	np = tp->next;
+	free(tp);
+    }
+}
+
+/**
+ * Frees an Acl struct and all of its entries.
+ *
+ * If the pointed-to Acl struct is NULL, the function does nothing. On return,
+ * the caller's pointer (*a_acl) is set to NULL to avoid dangling pointers.
+ *
+ * @param[in,out] a_acl address of the Acl struct pointer to be freed, this Acl
+ *			struct pointer (*a_acl) is set to NULL on return
+ */
+static void
+aclu_FreeAcl(struct aclu_Acl **a_acl)
+{
+    struct aclu_Acl *acl = *a_acl;
+    if (acl == NULL) {
 	return;
-    ZapList(acl->pluslist);
-    ZapList(acl->minuslist);
+    }
+    *a_acl = NULL;
+
+    FreeEntryList(acl->pluslist);
+    FreeEntryList(acl->minuslist);
     free(acl);
 }
 
@@ -308,16 +330,6 @@ ChangeList(struct aclu_Acl *al, afs_int32 plus, char *aname, afs_int32 arights,
 	al->nminus++;
 	if (arights == 0)
 	    al->nminus -= PruneList(&al->minuslist, al->dfs);
-    }
-}
-
-static void
-ZapList(struct aclu_AclEntry *alist)
-{
-    struct aclu_AclEntry *tp, *np;
-    for (tp = alist; tp; tp = np) {
-	np = tp->next;
-	free(tp);
     }
 }
 
@@ -605,8 +617,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 	    continue;
 	}
 
-	if (ta)
-	    ZapAcl(ta);
+	aclu_FreeAcl(&ta);
 	ta = ParseAcl(space);
 	if (!plusp && ta->dfs) {
 	    fprintf(stderr,
@@ -617,8 +628,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 	    continue;
 	}
 
-	if (ta)
-	    ZapAcl(ta);
+	aclu_FreeAcl(&ta);
 	if (clear)
 	    ta = EmptyAcl(space);
 	else
@@ -629,7 +639,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 	    if (!ui->next) {
 		fprintf(stderr,
 			"%s: Missing second half of user/access pair.\n", pn);
-		ZapAcl(ta);
+		aclu_FreeAcl(&ta);
 		return 1;
 	    }
 	    rights = Convert(ui->next->data, ta->dfs, &rtype);
@@ -704,8 +714,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 	    error = 1;
 	}
     }
-    if (ta)
-	ZapAcl(ta);
+    aclu_FreeAcl(&ta);
     return error;
 }
 
@@ -747,8 +756,7 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
 	    continue;
 	}
 
-	if (ta)
-	    ZapAcl(ta);
+	aclu_FreeAcl(&ta);
 	if (clear)
 	    ta = EmptyAcl(space);
 	else
@@ -792,9 +800,8 @@ CopyACLCmd(struct cmd_syndesc *as, void *arock)
 	    error = 1;
 	}
     }
-    if (ta)
-	ZapAcl(ta);
-    ZapAcl(fa);
+    aclu_FreeAcl(&ta);
+    aclu_FreeAcl(&fa);
     return error;
 }
 
@@ -917,8 +924,7 @@ CleanACLCmd(struct cmd_syndesc *as, void *arock)
 	    continue;
 	}
 
-	if (ta)
-	    ZapAcl(ta);
+	aclu_FreeAcl(&ta);
 	ta = ParseAcl(space);
 	if (ta->dfs) {
 	    fprintf(stderr,
@@ -976,8 +982,7 @@ CleanACLCmd(struct cmd_syndesc *as, void *arock)
 	} else
 	    printf("Access list for %s is fine.\n", ti->data);
     }
-    if (ta)
-	ZapAcl(ta);
+    aclu_FreeAcl(&ta);
     return error;
 }
 
@@ -1059,7 +1064,7 @@ ListACLCmd(struct cmd_syndesc *as, void *arock)
 	    if (ti->next)
 	        printf("\n");
 	}
-	ZapAcl(ta);
+	aclu_FreeAcl(&ta);
     }
     return error;
 }
