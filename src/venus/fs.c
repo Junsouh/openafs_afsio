@@ -312,16 +312,31 @@ enum aclu_rights_type {
     ACLU_RTYPE_RELDEL,	/**< remove specific rights from existing ones ('-') */
 };
 
-static afs_int32
-Convert(const char *rights_str, int dfs, enum aclu_rights_type *rtypep)
+static int
+ParseRights(int dfs, const char *rights_str, afs_uint32 *a_mask,
+	    enum aclu_rights_type *rtypep, char *bad_char)
 {
     afs_int32 mode;
+    int code;
+    int tc_i;
     char tc;
     char *tcp;                  /* to walk through the rights string  */
     char *arights = NULL;
 
+    if (bad_char != NULL) {
+	*bad_char = 0;
+    }
+
+    if (rights_str == NULL || a_mask == NULL || rtypep == NULL) {
+	code = EINVAL;
+	goto error;
+    }
+
     arights = strdup(rights_str);
-    opr_Assert(arights != NULL);
+    if (arights == NULL) {
+	code = ENOMEM;
+	goto error;
+    }
 
     /* set rights by default */
     *rtypep = ACLU_RTYPE_SET;
@@ -386,8 +401,9 @@ Convert(const char *rights_str, int dfs, enum aclu_rights_type *rtypep)
 	goto success;
     }
     mode = 0;
-    tcp = arights;
-    while ((tc = *tcp++ )) {
+    for (tc_i = 0; arights[tc_i] != '\0'; tc_i++) {
+	tc = arights[tc_i];
+
 	if (dfs) {
 	    if (tc == '-')
 		continue;
@@ -420,9 +436,11 @@ Convert(const char *rights_str, int dfs, enum aclu_rights_type *rtypep)
 	    else if (tc == 'H')
 		mode |= DFS_USR7;
 	    else {
-		fprintf(stderr, "%s: illegal DFS rights character '%c'.\n",
-			pn, tc);
-		exit(1);
+		if (bad_char != NULL) {
+		    *bad_char = tc;
+		}
+		code = EINVAL;
+		goto error;
 	    }
 	} else {
 	    if (tc == 'r')
@@ -456,16 +474,96 @@ Convert(const char *rights_str, int dfs, enum aclu_rights_type *rtypep)
 	    else if (tc == 'H')
 		mode |= PRSFS_USR7;
 	    else {
-		fprintf(stderr, "%s: illegal rights character '%c'.\n", pn,
-			tc);
-		exit(1);
+		if (bad_char != NULL) {
+		    *bad_char = tc;
+		}
+		code = EINVAL;
+		goto error;
 	    }
 	}
     }
 
  success:
+    *a_mask = mode;
+    code = 0;
+
+ error:
     free(arights);
-    return mode;
+    return code;
+}
+
+/**
+ * Parses an ACL rights string into a bitmask.
+ *
+ * Translates user-provided string of access rights into the internal bitmask
+ * representation. It handles abbreviations (e.g. rlidwka) and shorthands
+ * (e.g. read). It also inspects the string for trailing modifiers (+, -,
+ * =) to determine whether the rights should be added to, removed from, or
+ * explicitly overwrite the existing ACL entry.
+ *
+ * @param[in]   arights  null-terminated string representing the rights
+ * @param[out]  a_mask   calculated rights bitmask
+ * @param[out]  rtypep   resolved ACL action
+ * @param[out]  bad_char pointer to the first illegal char encountered
+ *
+ * @return status codes
+ * @retval 0       success
+ * @retval EINVAL  NULL argument or unrecognized character
+ */
+static int
+aclu_ParseRights(const char *arights, afs_uint32 *a_mask,
+		 enum aclu_rights_type *rtypep, char *bad_char)
+{
+    return ParseRights(0, arights, a_mask, rtypep, bad_char);
+}
+
+/**
+ * Parses an DFS ACL rights string into a bitmask.
+ *
+ * Has the same function as aclu_ParseRights, but for DFS ACLs. See comment
+ * above aclu_ParseRights for details on supported function.
+ *
+ * @param[in]   arights  null-terminated string representing the rights
+ * @param[out]  a_mask   calculated rights bitmask
+ * @param[out]  rtypep   resolved ACL action
+ * @param[out]  bad_char pointer to the first illegal char encountered
+ *
+ * @return status codes
+ * @retval 0       success
+ * @retval EINVAL  NULL argument or unrecognized character
+ */
+static int
+aclu_ParseRightsDFS(const char *arights, afs_uint32 *a_mask,
+		    enum aclu_rights_type *rtypep, char *bad_char)
+{
+    return ParseRights(1, arights, a_mask, rtypep, bad_char);
+}
+
+static afs_int32
+Convert(const char *arights, int dfs, enum aclu_rights_type *rtypep)
+{
+    const char *dfs_str = "";
+    afs_uint32 mask = 0;
+    char bad_char = 0;
+    int code;
+
+    if (dfs) {
+	code = aclu_ParseRightsDFS(arights, &mask, rtypep, &bad_char);
+	dfs_str = "DFS ";
+    } else {
+	code = aclu_ParseRights(arights, &mask, rtypep, &bad_char);
+    }
+    if (code != 0) {
+	if (bad_char != 0) {
+	    fprintf(stderr, "%s: illegal %srights character '%c'.\n",
+		    pn, dfs_str, bad_char);
+	} else {
+	    fprintf(stderr, "%s: error parsing %srights.\n",
+		    pn, dfs_str);
+	}
+	exit(1);
+    }
+    return mask;
 }
 
 static struct AclEntry *
