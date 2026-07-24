@@ -358,3 +358,35 @@ aclu_StringifyRightsDFS(afs_uint32 arights, struct aclu_rightsbuf *strbuf)
     return strbuf->sbuf;
 }
 
+static void
+FreeEntryList(struct aclu_AclEntry *alist)
+{
+    struct aclu_AclEntry *tp, *np;
+    for (tp = alist; tp; tp = np) {
+	np = tp->next;
+	free(tp);
+    }
+}
+
+/**
+ * Frees an Acl struct and all of its entries.
+ *
+ * If the pointed-to Acl struct is NULL, the function does nothing. On return,
+ * the caller's pointer (*a_acl) is set to NULL to avoid dangling pointers.
+ *
+ * @param[in,out] a_acl address of the Acl struct pointer to be freed, this Acl
+ *			struct pointer (*a_acl) is set to NULL on return
+ */
+void
+aclu_FreeAcl(struct aclu_Acl **a_acl)
+{
+    struct aclu_Acl *acl = *a_acl;
+    if (acl == NULL) {
+	return;
+    }
+    *a_acl = NULL;
+
+    FreeEntryList(acl->pluslist);
+    FreeEntryList(acl->minuslist);
+    free(acl);
+}

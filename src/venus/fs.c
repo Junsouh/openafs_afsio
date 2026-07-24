@@ -42,7 +42,6 @@
 #include <afs/afsutil.h>
 #include <afs/sys_prototypes.h>
 
-#define MAXNAME 100
 #define MAXINSIZE 1300		/* pioctl complains if data is larger than this */
 #define VMSGSIZE 128		/* size of msg buf in volume hdr */
 
@@ -61,8 +60,6 @@ static int UuidCmd(struct cmd_syndesc *, void *);
 static char pn[] = "fs";
 static int rxInitDone = 0;
 
-struct aclu_AclEntry;
-struct aclu_Acl;
 static int PruneList(struct aclu_AclEntry **, int);
 static int CleanAcl(struct aclu_Acl *, char *);
 static int SetVolCmd(struct cmd_syndesc *as, void *arock);
@@ -75,62 +72,12 @@ static void Die(int, char *);
  */
 #define DFS_SEPARATOR	' '
 
-struct aclu_Acl {
-    int dfs;			/* Originally true if a dfs acl; now also the type
-				 * of the acl (1, 2, or 3, corresponding to object,
-				 * initial dir, or initial object). */
-    char cell[1025];	/* DFS cell name, from DCE sec_rgy_name_t */
-    int nplus;
-    int nminus;
-    struct aclu_AclEntry *pluslist;
-    struct aclu_AclEntry *minuslist;
-};
-
-struct aclu_AclEntry {
-    struct aclu_AclEntry *next;
-    char name[MAXNAME];
-    afs_int32 rights;
-};
-
 struct vcxstat2 {
     afs_int32 callerAccess;
     afs_int32 cbExpires;
     afs_int32 anyAccess;
     char mvstat;
 };
-
-static void
-FreeEntryList(struct aclu_AclEntry *alist)
-{
-    struct aclu_AclEntry *tp, *np;
-    for (tp = alist; tp; tp = np) {
-	np = tp->next;
-	free(tp);
-    }
-}
-
-/**
- * Frees an Acl struct and all of its entries.
- *
- * If the pointed-to Acl struct is NULL, the function does nothing. On return,
- * the caller's pointer (*a_acl) is set to NULL to avoid dangling pointers.
- *
- * @param[in,out] a_acl address of the Acl struct pointer to be freed, this Acl
- *			struct pointer (*a_acl) is set to NULL on return
- */
-static void
-aclu_FreeAcl(struct aclu_Acl **a_acl)
-{
-    struct aclu_Acl *acl = *a_acl;
-    if (acl == NULL) {
-	return;
-    }
-    *a_acl = NULL;
-
-    FreeEntryList(acl->pluslist);
-    FreeEntryList(acl->minuslist);
-    free(acl);
-}
 
 static int
 foldcmp(char *a, char *b)
