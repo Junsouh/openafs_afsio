@@ -150,5 +150,8 @@ extern int aclu_FilterAcl(struct aclu_Acl *aa, aclu_filter_func *filter,
 
 extern struct aclu_AclEntry *aclu_SearchList(struct aclu_AclEntry *alist,
 					     const char *aname);
+extern int aclu_UpdateList(struct aclu_Acl *al, afs_int32 plus,
+			   const char *aname, afs_int32 arights,
+			   enum aclu_rights_type *artypep);
 
 #endif

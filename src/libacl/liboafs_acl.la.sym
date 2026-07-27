@@ -16,3 +16,4 @@ aclu_ParseRightsDFS
 aclu_SearchList
 aclu_StringifyRights
 aclu_StringifyRightsDFS
+aclu_UpdateList

@@ -678,3 +678,101 @@ aclu_SearchList(struct aclu_AclEntry *alist, const char *aname)
     }
     return 0;
 }
+
+static int
+PruneList(struct aclu_AclEntry **ae, int dfs)
+{
+    struct aclu_AclEntry **lp;
+    struct aclu_AclEntry *te, *ne;
+    afs_int32 ctr;
+    ctr = 0;
+    lp = ae;
+    for (te = *ae; te; te = ne) {
+	if ((!dfs && te->rights == 0) || te->rights == -1) {
+	    *lp = te->next;
+	    ne = te->next;
+	    free(te);
+	    ctr++;
+	} else {
+	    ne = te->next;
+	    lp = &te->next;
+	}
+    }
+    return ctr;
+}
+
+/**
+ * Modifies given ACL according to given arguments.
+ *
+ * Locates ACL entry with name given in aname. If an entry with the name given
+ * does not exist, and the rtype given is not ACLU_RELDEL, a new entry will be
+ * created and inserted. If ACLU_RELDEL was given, nothing will happen rights
+ * cannot be removed from a nonexistent entry.
+ *
+ * Entries with 0 rights after the change will be deleted.
+ *
+ * @param[in,out]  al      Acl struct to modify
+ * @param[in]      plus    0 indicates modifying the negative list, nonzero
+ *			   indicates modifying the positive list
+ * @param[in]      aname   name of the AclEntry to modify/create
+ * @param[in]      arights rights bitmask to apply
+ * @param[in]      artypep method to incorporate arights with
+ *			   (see enum rtype: ACLU_SET, ACLU_RELADD, etc.)
+ *
+ * @return status codes
+ * @retval 0 success
+ * @retval ENOMEM malloc call failed, insufficient memory
+ */
+int
+aclu_UpdateList(struct aclu_Acl *al, afs_int32 plus, const char *aname,
+		afs_int32 arights, enum aclu_rights_type *artypep)
+{
+    struct aclu_AclEntry *tlist = NULL;
+    tlist = (plus ? al->pluslist : al->minuslist);
+    tlist = aclu_SearchList(tlist, aname);
+    if (tlist) {
+	/* Found the item already in the list.
+	 * modify rights in case of _RELADD and _RELDEL only,
+	 * use standard _SET otherwise
+	 */
+        if ( artypep == NULL )
+            tlist->rights = arights;
+	else if ( *artypep == ACLU_RTYPE_RELADD )
+            tlist->rights |= arights;
+	else if ( *artypep == ACLU_RTYPE_RELDEL )
+            tlist->rights &= ~arights;
+        else
+            tlist->rights = arights;
+
+	if (plus)
+	    al->nplus -= PruneList(&al->pluslist, al->dfs);
+	else
+	    al->nminus -= PruneList(&al->minuslist, al->dfs);
+	return 0;
+    }
+    if ( artypep != NULL && *artypep == ACLU_RTYPE_RELDEL )
+        return 0;                 /* can't reduce non-existing rights   */
+
+    /* Otherwise we make a new item and plug in the new data. */
+    tlist = malloc(sizeof(struct aclu_AclEntry));
+    if (tlist == NULL) {
+	return ENOMEM;
+    }
+    strcpy(tlist->name, aname);
+    tlist->rights = arights;
+    if (plus) {
+	tlist->next = al->pluslist;
+	al->pluslist = tlist;
+	al->nplus++;
+	if (arights == 0 || arights == -1)
+	    al->nplus -= PruneList(&al->pluslist, al->dfs);
+    } else {
+	tlist->next = al->minuslist;
+	al->minuslist = tlist;
+	al->nminus++;
+	if (arights == 0)
+	    al->nminus -= PruneList(&al->minuslist, al->dfs);
+    }
+
+    return 0;
+}

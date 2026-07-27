@@ -500,10 +500,96 @@ test_CleanAcl(void)
     }
 }
 
+static void
+test_UpdateList(void)
+{
+    int tc_i;
+
+    struct {
+	const char *acl;
+	int plus;
+	const char *name;
+	afs_int32 rights;
+	enum aclu_rights_type rtype;
+	int use_rtype;
+	int code;
+	const char *result;
+
+    } *tc, test_cases[] = {
+	{
+	    "1\n0\nsystem:administrators 127\n",
+	    1, "newuser", READ, 0, 0, 0,
+	    "2\n0\nnewuser 9\nsystem:administrators 127\n",
+	},
+	{
+	    "1\n0\ntester 127\n",
+	    1, "tester", READ, 0, 0, 0,
+	    "1\n0\ntester 9\n",
+	},
+	{
+	    "1\n0\ntester 8\n",		/* PRSFS_LOOKUP */
+	    1, "tester", PRSFS_READ, ACLU_RTYPE_RELADD, 1, 0,
+	    "1\n0\ntester 9\n",
+	},
+	{
+	    "1\n0\ntester 9\n",
+	    1, "tester", PRSFS_READ, ACLU_RTYPE_RELDEL, 1, 0,
+	    "1\n0\ntester 8\n",
+	},
+	{
+	    "1\n0\ntester 1\n",
+	    1, "tester", PRSFS_READ, ACLU_RTYPE_RELDEL, 1, 0,
+	    "0\n0\n",
+	},
+	{
+	    "1\n0\ntester 9\n",
+	    1, "tester", 0, 0, 0, 0,
+	    "0\n0\n",
+	},
+	{
+	    "1\n0\nsystem:administrators 127\n",
+	    1, "ghost", PRSFS_READ, ACLU_RTYPE_RELDEL, 1, 0,
+	    "1\n0\nsystem:administrators 127\n",
+	},
+	{
+	    "0\n0\n",
+	    0, "bad", READ, 0, 0, 0,
+	    "0\n1\nbad 9\n",
+	},
+	{
+	    "0\n1\nbad 8\n",
+	    0, "bad", PRSFS_READ, ACLU_RTYPE_RELADD, 1, 0,
+	    "0\n1\nbad 9\n",
+	},
+    };
+
+    for (afstest_Scan(test_cases, tc, tc_i)) {
+	struct aclu_Acl *acl = NULL;
+	struct aclu_aclbuf buf;
+	enum aclu_rights_type rtype = tc->rtype;
+	int code;
+
+	memset(&buf, 0, sizeof(buf));
+
+	code = aclu_ParseAcl(tc->acl, &acl);
+	opr_Assert(code == 0);
+
+	code = aclu_UpdateList(acl, tc->plus, tc->name, tc->rights,
+			       tc->use_rtype ? &rtype : NULL);
+	is_int(code, tc->code,
+	       "[%d] aclu_UpdateList() == %d", tc_i, tc->code);
+
+	is_string(aclu_AclToNetstring(acl, &buf), tc->result,
+		  "... updated acl matches");
+
+	aclu_FreeAcl(&acl);
+    }
+}
+
 int
 main(void)
 {
-    plan(120);
+    plan(138);
 
     test_ParseRights();
     test_StringifyRights();
@@ -511,4 +597,5 @@ main(void)
     test_ParseEmptyAcl();
     test_AclToNetstring();
     test_CleanAcl();
+    test_UpdateList();
 }
