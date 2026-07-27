@@ -80,7 +80,7 @@ struct vcxstat2 {
 };
 
 static int
-foldcmp(char *a, char *b)
+foldcmp(const char *a, const char *b)
 {
     char t, u;
     while (1) {
@@ -203,7 +203,7 @@ Convert(const char *arights, int dfs, enum aclu_rights_type *rtypep)
 }
 
 static struct aclu_AclEntry *
-FindList(struct aclu_AclEntry *alist, char *aname)
+FindList(struct aclu_AclEntry *alist, const char *aname)
 {
     while (alist) {
 	if (!foldcmp(alist->name, aname))
