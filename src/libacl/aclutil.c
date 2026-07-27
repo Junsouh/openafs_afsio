@@ -640,3 +640,41 @@ aclu_FilterAcl(struct aclu_Acl *aa, aclu_filter_func *filter, void *rock)
     }
     return 0;
 }
+
+static int
+foldcmp(const char *a, const char *b)
+{
+    char t, u;
+    while (1) {
+	t = *a++;
+	u = *b++;
+	if (t >= 'A' && t <= 'Z')
+	    t += 0x20;
+	if (u >= 'A' && u <= 'Z')
+	    u += 0x20;
+	if (t != u)
+	    return 1;
+	if (t == 0)
+	    return 0;
+    }
+}
+
+/**
+ * Finds an ACL entry of a given name in a linked list of ACL entries.
+ *
+ * @param[in]  alist pointer to first linked list node to search
+ * @param[in]  aname null-terminated string holding the name to find
+ *
+ * @retval non-NULL pointer to AclEntry with the given name
+ * @retval NULL     no entry with given name exists
+ */
+struct aclu_AclEntry *
+aclu_SearchList(struct aclu_AclEntry *alist, const char *aname)
+{
+    while (alist) {
+	if (!foldcmp(alist->name, aname))
+	    return alist;
+	alist = alist->next;
+    }
+    return 0;
+}

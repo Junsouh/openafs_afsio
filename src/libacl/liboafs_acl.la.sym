@@ -13,5 +13,6 @@ aclu_ParseAcl
 aclu_ParseEmptyAcl
 aclu_ParseRights
 aclu_ParseRightsDFS
+aclu_SearchList
 aclu_StringifyRights
 aclu_StringifyRightsDFS

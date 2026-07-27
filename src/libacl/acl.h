@@ -148,4 +148,7 @@ typedef int (aclu_filter_func)(struct aclu_Acl *acl, int neg,
 extern int aclu_FilterAcl(struct aclu_Acl *aa, aclu_filter_func *filter,
 			  void *rock);
 
+extern struct aclu_AclEntry *aclu_SearchList(struct aclu_AclEntry *alist,
+					     const char *aname);
+
 #endif

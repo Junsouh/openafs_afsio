@@ -79,24 +79,6 @@ struct vcxstat2 {
     char mvstat;
 };
 
-static int
-foldcmp(const char *a, const char *b)
-{
-    char t, u;
-    while (1) {
-	t = *a++;
-	u = *b++;
-	if (t >= 'A' && t <= 'Z')
-	    t += 0x20;
-	if (u >= 'A' && u <= 'Z')
-	    u += 0x20;
-	if (t != u)
-	    return 1;
-	if (t == 0)
-	    return 0;
-    }
-}
-
 /*
  * Offset of -id switch in command structure for various commands.
  * The -if switch is the next switch always.
@@ -200,26 +182,6 @@ Convert(const char *arights, int dfs, enum aclu_rights_type *rtypep)
 	exit(1);
     }
     return mask;
-}
-
-/**
- * Finds an ACL entry of a given name in a linked list of ACL entries.
- *
- * @param[in]  alist pointer to first linked list node to search
- * @param[in]  aname null-terminated string holding the name to find
- *
- * @retval non-NULL pointer to AclEntry with the given name
- * @retval NULL     no entry with given name exists
- */
-static struct aclu_AclEntry *
-aclu_SearchList(struct aclu_AclEntry *alist, const char *aname)
-{
-    while (alist) {
-	if (!foldcmp(alist->name, aname))
-	    return alist;
-	alist = alist->next;
-    }
-    return 0;
 }
 
 /* if no parm specified in a particular slot, set parm to be "." instead */
