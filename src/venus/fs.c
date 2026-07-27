@@ -201,11 +201,33 @@ SetDotDefault(struct cmd_item **aitemp)
     *aitemp = ti;
 }
 
-static void
-ChangeList(struct aclu_Acl *al, afs_int32 plus, char *aname, afs_int32 arights,
-	   enum aclu_rights_type *artypep)
+/**
+ * Modifies given ACL according to given arguments.
+ *
+ * Locates ACL entry with name given in aname. If an entry with the name given
+ * does not exist, and the rtype given is not ACLU_RELDEL, a new entry will be
+ * created and inserted. If ACLU_RELDEL was given, nothing will happen rights
+ * cannot be removed from a nonexistent entry.
+ *
+ * Entries with 0 rights after the change will be deleted.
+ *
+ * @param[in,out]  al      Acl struct to modify
+ * @param[in]      plus    0 indicates modifying the negative list, nonzero
+ *			   indicates modifying the positive list
+ * @param[in]      aname   name of the AclEntry to modify/create
+ * @param[in]      arights rights bitmask to apply
+ * @param[in]      artypep method to incorporate arights with
+ *			   (see enum rtype: ACLU_SET, ACLU_RELADD, etc.)
+ *
+ * @return status codes
+ * @retval 0 success
+ * @retval ENOMEM malloc call failed, insufficient memory
+ */
+static int
+aclu_UpdateList(struct aclu_Acl *al, afs_int32 plus, const char *aname,
+		afs_int32 arights, enum aclu_rights_type *artypep)
 {
-    struct aclu_AclEntry *tlist;
+    struct aclu_AclEntry *tlist = NULL;
     tlist = (plus ? al->pluslist : al->minuslist);
     tlist = aclu_SearchList(tlist, aname);
     if (tlist) {
@@ -226,14 +248,16 @@ ChangeList(struct aclu_Acl *al, afs_int32 plus, char *aname, afs_int32 arights,
 	    al->nplus -= PruneList(&al->pluslist, al->dfs);
 	else
 	    al->nminus -= PruneList(&al->minuslist, al->dfs);
-	return;
+	return 0;
     }
     if ( artypep != NULL && *artypep == ACLU_RTYPE_RELDEL )
-        return;                 /* can't reduce non-existing rights   */
+        return 0;                 /* can't reduce non-existing rights   */
 
     /* Otherwise we make a new item and plug in the new data. */
     tlist = malloc(sizeof(struct aclu_AclEntry));
-    assert(tlist);
+    if (tlist == NULL) {
+	return ENOMEM;
+    }
     strcpy(tlist->name, aname);
     tlist->rights = arights;
     if (plus) {
@@ -249,6 +273,18 @@ ChangeList(struct aclu_Acl *al, afs_int32 plus, char *aname, afs_int32 arights,
 	if (arights == 0)
 	    al->nminus -= PruneList(&al->minuslist, al->dfs);
     }
+
+    return 0;
+}
+
+static void
+ChangeList(struct aclu_Acl *al, afs_int32 plus, char *aname, afs_int32 arights,
+	   enum aclu_rights_type *artypep)
+{
+    int code;
+
+    code = aclu_UpdateList(al, plus, aname, arights, artypep);
+    opr_Assert(code == 0);
 }
 
 static int
