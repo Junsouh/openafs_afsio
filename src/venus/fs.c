@@ -202,8 +202,17 @@ Convert(const char *arights, int dfs, enum aclu_rights_type *rtypep)
     return mask;
 }
 
+/**
+ * Finds an ACL entry of a given name in a linked list of ACL entries.
+ *
+ * @param[in]  alist pointer to first linked list node to search
+ * @param[in]  aname null-terminated string holding the name to find
+ *
+ * @retval non-NULL pointer to AclEntry with the given name
+ * @retval NULL     no entry with given name exists
+ */
 static struct aclu_AclEntry *
-FindList(struct aclu_AclEntry *alist, const char *aname)
+aclu_SearchList(struct aclu_AclEntry *alist, const char *aname)
 {
     while (alist) {
 	if (!foldcmp(alist->name, aname))
@@ -236,7 +245,7 @@ ChangeList(struct aclu_Acl *al, afs_int32 plus, char *aname, afs_int32 arights,
 {
     struct aclu_AclEntry *tlist;
     tlist = (plus ? al->pluslist : al->minuslist);
-    tlist = FindList(tlist, aname);
+    tlist = aclu_SearchList(tlist, aname);
     if (tlist) {
 	/* Found the item already in the list.
 	 * modify rights in case of _RELADD and _RELDEL only,
@@ -509,7 +518,7 @@ SetACLCmd(struct cmd_syndesc *as, void *arock)
 		struct aclu_AclEntry *tlist;
 
 		tlist = (plusp ? ta->pluslist : ta->minuslist);
-		if (!FindList(tlist, ui->data))
+		if (!aclu_SearchList(tlist, ui->data))
 		    continue;
 	    }
 	    if (rtype == ACLU_RTYPE_DENY && !ta->dfs)
